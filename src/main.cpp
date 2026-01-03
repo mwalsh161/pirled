@@ -1,59 +1,60 @@
-#include <EEPROM.h>
 #include <ESP8266WiFi.h>
 
+#include "LedControl.h"
 #include "PortalServer.h"
-#include "StatusLed.h"
-#include "WifiCreds.h"
 
-/* ---------------- Configuration ---------------- */
-
-#define LED_PIN 2     // Most ESP8266 boards (active LOW)
+#define MAIN_LED_PIN 5
+#define STATUS_LED_PIN 2
 #define LED_MAX 1023  // ESP8266 PWM resolution
+#define WIFI_TIMEOUT_MS 10000
 
-/* ---------------- Globals ---------------- */
-
-StatusLed statusLed;
-
-/* ---------------- WiFi ---------------- */
-
-bool connectWifi(const WifiCreds& creds) {
-    WiFi.mode(WIFI_STA);
-    WiFi.begin(creds.ssid, creds.pass);
-
-    unsigned long start = millis();
-    while (WiFi.status() != WL_CONNECTED) {
-        statusLed.update();
-        delay(10);
-
-        if (millis() - start > 10000) {
-            statusLed.setMode(StatusLed::Mode::ERROR);
-            return false;
-        }
-    }
-
-    statusLed.setMode(StatusLed::Mode::OFF);
-    return true;
-}
+LedControl statusLed;
+LedControl mainLed;
 
 /* ---------------- Arduino ---------------- */
 
-void setup() {
-    WifiCreds creds;  // No need to initialize here; loadCreds will.
+bool tryConnectStoredWiFi() {
+    if (WiFi.SSID() == "") return false;
 
-    statusLed.begin(LED_PIN, LED_MAX);
-    Serial.begin(115200);
+    WiFi.begin();
+    statusLed.setMode(LedControl::Mode::BLINK);
 
-    if (!loadCreds(creds) || !connectWifi(creds)) {
-        statusLed.setMode(StatusLed::Mode::FADE);
+    unsigned long start = millis();
+    while (WiFi.status() != WL_CONNECTED && millis() - start < WIFI_TIMEOUT_MS) {
+        statusLed.update();
+        delay(10);
+    }
 
-        WiFi.mode(WIFI_AP);
-        WiFi.softAP("Motion LED Setup");
+    return WiFi.status() == WL_CONNECTED;
+}
 
-        PortalServer::begin(WiFi.softAPIP(), saveCreds);
+void runPortalBlocking() {
+    statusLed.setMode(LedControl::Mode::FADE);
+
+    PortalServer server;
+    while (true) {
+        statusLed.update();
+        server.handle();  // Eventually will restart ESP.
     }
 }
 
+void setup() {
+    Serial.begin(115200);
+    statusLed.begin(STATUS_LED_PIN, LED_MAX);
+    mainLed.begin(MAIN_LED_PIN, LED_MAX);
+
+    WiFi.mode(WIFI_STA);
+    WiFi.persistent(true);
+
+    if (!tryConnectStoredWiFi()) {
+        runPortalBlocking();
+    }
+    statusLed.setMode(LedControl::Mode::OFF);
+    mainLed.setMode(LedControl::Mode::FADE);
+}
+
 void loop() {
+    delay(10);
     statusLed.update();
-    PortalServer::handle();
+    mainLed.update();
 }

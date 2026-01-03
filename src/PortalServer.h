@@ -1,12 +1,16 @@
 #pragma once
 
-#include <IPAddress.h>
-#include <WifiCreds.h>
+#include <DNSServer.h>
+#include <ESP8266WebServer.h>
 
-namespace PortalServer {
-using CredsCallback = void (*)(const WifiCreds&);
+class PortalServer {
+   public:
+    PortalServer();
+    ~PortalServer();
 
-void begin(const IPAddress& apIP, const CredsCallback& credsCB);
-void handle();
-void stop();
-}  // namespace PortalServer
+    void handle();
+
+   private:
+    ESP8266WebServer m_server;
+    DNSServer m_dns;
+};

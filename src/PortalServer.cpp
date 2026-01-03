@@ -1,64 +1,48 @@
 #include "PortalServer.h"
 
-#include <DNSServer.h>
-#include <ESP8266WebServer.h>
 #include <ESP8266WiFi.h>
-
-#include "WifiCreds.h"
 
 #define DNS_PORT 53
 
-namespace PortalServer {
-
-static ESP8266WebServer server(80);
-static DNSServer dns;
-
+#ifndef __INTELLISENSE__
+// clang-format off
 const static char SPLASH_HTML[] PROGMEM =
 #include "static/splash.html"
-    ;
+;
+// clang-format on
+#else
+const static char SPLASH_HTML[] PROGMEM = "";
+#endif
 
-void begin(const IPAddress& apIP, const CredsCallback& credsCB) {
-    dns.start(DNS_PORT, "*", apIP);
+PortalServer::PortalServer() : m_server(80) {
+    WiFi.mode(WIFI_AP);
+    delay(100);
+    WiFi.softAP("ESP8266-Setup");
+    m_dns.start(DNS_PORT, "*", WiFi.softAPIP());
 
-    server.on("/", HTTP_GET, []() {
-        server.send_P(200, "text/html", SPLASH_HTML);  // _P reads from PROGMEM
-    });
+    m_server.on("/save", HTTP_POST, [this]() {
+        m_server.send(200, "text/html", "<h2>Saved. Rebooting...</h2>");
+        m_server.client().flush();
+        delay(500);
 
-    server.on("/save", HTTP_POST, [credsCB]() {
-        WifiCreds creds{};
-        strncpy(creds.ssid, server.arg("ssid").c_str(), sizeof(creds.ssid) - 1);
-        strncpy(creds.pass, server.arg("pass").c_str(), sizeof(creds.pass) - 1);
-
-        credsCB(creds);
-
-        server.send(200, "text/html", "<h2>Saved. Rebooting...</h2>");
+        // We call begin to save creds, then reoboot to actually connect.
+        WiFi.begin(m_server.arg("ssid").c_str(), m_server.arg("pass").c_str());
         ESP.restart();
     });
 
-    // mac-specific captive portal
-    server.on("/hotspot-detect.html", HTTP_GET, []() {
-        server.send(200, "text/html", "<HTML><BODY>Success</BODY></HTML>");
+    m_server.onNotFound([this]() {
+        m_server.send_P(200, "text/html", SPLASH_HTML);  // _P reads from PROGMEM
     });
 
-    server.on("/library/test/success.html", HTTP_GET,
-              []() { server.send(200, "text/html", "Success"); });
-
-    server.onNotFound([]() {
-        server.sendHeader("Location", "/", true);
-        server.send(302, "text/plain", "");
-    });
-
-    server.begin();
+    m_server.begin();
 }
 
-void handle() {
-    dns.processNextRequest();
-    server.handleClient();
+PortalServer::~PortalServer() {
+    m_dns.stop();
+    m_server.stop();
 }
 
-void stop() {
-    dns.stop();
-    server.stop();
+void PortalServer::handle() {
+    m_dns.processNextRequest();
+    m_server.handleClient();
 }
-
-}  // namespace PortalServer
