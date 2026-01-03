@@ -1,0 +1,21 @@
+R"rawliteral(
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>WiFi Setup</title>
+        <style>
+            body { font-family: sans-serif; margin: 2em; }
+            input, button { width: 100%; padding: 8px; margin: 8px 0; }
+        </style>
+    </head>
+    <body>
+        <h2>Configure WiFi</h2>
+        <form action="/save" method="POST">
+            <input name="ssid" placeholder="SSID" required>
+            <input name="pass" placeholder="Password" type="password">
+            <button type="submit">Save</button>
+        </form>
+    </body>
+</html>
+)rawliteral"
