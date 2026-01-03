@@ -1,15 +1,14 @@
-#include <WifiCreds.h>
-
-#include <ESP8266WiFi.h>
 #include <EEPROM.h>
+#include <ESP8266WiFi.h>
+#include <WifiCreds.h>
 
 // TODO: move to eeprom manager if needed.
 #define EEPROM_OFFSET 0
-#define EEPROM_SIZE 96 // sizeof(WifiCreds)
+#define EEPROM_SIZE 96  // sizeof(WifiCreds)
 
 void saveCreds(const WifiCreds& creds) {
     EEPROM.begin(EEPROM_SIZE);
-    
+
     // Avoid extra writes if possible to preserve EEPROM.
     WifiCreds existing;
     EEPROM.get(EEPROM_OFFSET, existing);
@@ -33,6 +32,6 @@ void clearCreds(WifiCreds& creds) {
     for (int i = 0; i < EEPROM_SIZE; i++) {
         EEPROM.write(i, 0);  // write zero to each byte
     }
-    EEPROM.commit(); // flush changes to flash
+    EEPROM.commit();  // flush changes to flash
     creds.ssid[0] = '\0';
 }

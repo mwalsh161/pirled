@@ -1,6 +1,5 @@
-#include <StatusLed.h>
-
 #include <ESP8266WiFi.h>
+#include <StatusLed.h>
 
 void StatusLed::begin(uint8_t pin, int maxValue) {
     m_ledPin = pin;
@@ -51,7 +50,7 @@ void StatusLed::update() {
 }
 
 void StatusLed::applyOutput() {
-    int output = m_ledMax; // default off
+    int output = m_ledMax;  // default off
     if (m_mode == Mode::FADE) {
         output = m_ledMax - m_brightness;
     } else if (m_mode == Mode::ERROR) {

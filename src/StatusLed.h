@@ -3,12 +3,8 @@
 #include <Arduino.h>
 
 class StatusLed {
-public:
-    enum class Mode {
-        OFF,
-        FADE,
-        ERROR
-    };
+   public:
+    enum class Mode { OFF, FADE, ERROR };
 
     void begin(uint8_t pin, int maxValue = 1023);
     void setMode(Mode mode);
@@ -16,7 +12,7 @@ public:
 
     Mode getMode() const { return m_mode; }
 
-private:
+   private:
     void applyOutput();
 
     uint8_t m_ledPin = 0;
