@@ -1,24 +1,15 @@
+#include <Controller.h>
 #include <ESP8266WiFi.h>
 #include <limits.h>
 #include <pins.h>
 
-#include "LedControl.h"
+#include "Led.h"
 #include "PortalServer.h"
 
 #define WIFI_TIMEOUT_MS 10000
-#define TIMEOFF_WAIT 10000
 
-LedControl statusLed;
-LedControl mainLed;
-
-enum class ControlState {
-    OFF,
-    ON,          // PIR currently active
-    WAITING_OFF  // PIR inactive, off timer running
-};
-
-static ControlState state = ControlState::OFF;
-static unsigned long offRequested = 0;
+Led statusLed = Led(D4, true, 2);
+Controller controller = Controller(Led(D1, false, 0.3), D2);
 
 /* ---------------- Arduino ---------------- */
 
@@ -38,13 +29,13 @@ bool tryConnectStoredWiFi() {
     if (WiFi.SSID() == "") return false;
 
     WiFi.begin();
-    statusLed.setMode(LedControl::Mode::BLINK);
+    statusLed.setMode(Led::Mode::BLINK);
 
     return waitForWiFi();
 }
 
 void runPortalBlocking() {
-    statusLed.setMode(LedControl::Mode::FADE);
+    statusLed.setMode(Led::Mode::FADE);
 
     PortalServer server;
     while (true) {
@@ -55,9 +46,8 @@ void runPortalBlocking() {
 
 void setup() {
     Serial.begin(115200);
-    statusLed.begin(D4, true);
-    mainLed.begin(D1, false);
-    pinMode(D2, INPUT);
+    statusLed.setup();
+    controller.setup();
 
     WiFi.mode(WIFI_STA);
     WiFi.persistent(true);
@@ -65,47 +55,14 @@ void setup() {
     if (!tryConnectStoredWiFi()) {
         runPortalBlocking();
     }
-    statusLed.setMode(LedControl::Mode::OFF);
-
-    mainLed.setFreq(0.3);
+    statusLed.setMode(Led::Mode::OFF);
 
     unsigned long now = millis();
     statusLed.update(now);
-    mainLed.update(now);
+    controller.update(now);
 }
 
 void loop() {
     unsigned long now = millis();
-    bool pirActive = (digitalRead(D2) == HIGH);
-
-    switch (state) {
-        case ControlState::OFF:
-            if (pirActive) {
-                Serial.println("ON");
-                mainLed.setMode(LedControl::Mode::FADE_ON);
-                state = ControlState::ON;
-            }
-            break;
-
-        case ControlState::ON:
-            if (!pirActive) {
-                Serial.println("OFF SCHEDULED");
-                offRequested = now;
-                state = ControlState::WAITING_OFF;
-            }
-            break;
-
-        case ControlState::WAITING_OFF:
-            if (pirActive) {
-                Serial.println("OFF CANCELED");
-                state = ControlState::ON;
-            } else if ((long)(now - offRequested) >= TIMEOFF_WAIT) {
-                Serial.println("OFF");
-                mainLed.setMode(LedControl::Mode::FADE_OFF);
-                state = ControlState::OFF;
-            }
-            break;
-    }
-
-    mainLed.update(now);
+    controller.update(now);
 }

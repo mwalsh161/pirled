@@ -2,11 +2,19 @@
 
 #include <Arduino.h>
 
-class LedControl {
+class Led {
    public:
     enum class Mode { OFF, FADE, BLINK, FADE_ON, FADE_OFF };
 
-    void begin(uint8_t pin, bool inv, int maxValue = 1023);
+    Led(uint8_t pin, bool inv, float freq, int maxValue = 1023)
+        : m_ledPin(pin), m_inv(inv), m_freq(freq), m_ledMax(maxValue) {}
+
+    void setup() {
+        pinMode(m_ledPin, OUTPUT);
+        analogWriteRange(m_ledMax);
+        setMode(Mode::OFF);
+    }
+
     void update(unsigned long now);
 
     void setFreq(float freq) { m_freq = freq; };
@@ -16,11 +24,12 @@ class LedControl {
    private:
     void applyOutput();
 
-    uint8_t m_ledPin = 0;
-    int m_ledMax = 1023;
-    float m_freq = 2;
+    uint8_t m_ledPin;
+    bool m_inv;
+    float m_freq;
+    int m_ledMax;
+
     int m_fadeDirection = 1;
-    bool m_inv = true;
 
     unsigned long m_lastUpdate = 0;
     int m_lastWritten = 0;

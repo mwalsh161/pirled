@@ -1,16 +1,7 @@
 #include <ESP8266WiFi.h>
-#include <LedControl.h>
+#include <Led.h>
 
-void LedControl::begin(uint8_t pin, bool inv, int maxValue) {
-    m_ledPin = pin;
-    m_inv = inv;
-    m_ledMax = maxValue;
-    pinMode(m_ledPin, OUTPUT);
-    analogWriteRange(m_ledMax);
-    setMode(Mode::OFF);
-}
-
-void LedControl::update(unsigned long now) {
+void Led::update(unsigned long now) {
     float elapsedSec;
     float deltaBrightness;
 
@@ -80,7 +71,7 @@ void LedControl::update(unsigned long now) {
     applyOutput();
 }
 
-void LedControl::applyOutput() {
+void Led::applyOutput() {
     int pwmValue = m_brightness;
     if (m_inv) {
         pwmValue = m_ledMax - pwmValue;
