@@ -59,7 +59,6 @@ void setup() {
 
     unsigned long now = millis();
     statusLed.update(now);
-    controller.update(now);
 }
 
 void loop() {

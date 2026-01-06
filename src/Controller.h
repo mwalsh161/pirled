@@ -1,3 +1,5 @@
+#include <Arduino.h>
+
 #include "Led.h"
 
 class Controller {
@@ -20,6 +22,6 @@ class Controller {
 
     Led m_led;
     uint8_t m_sensePin;
-    State m_state;
+    State m_state = State::OFF;
     unsigned long m_offRequested = 0;
 };

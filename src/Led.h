@@ -1,6 +1,5 @@
 #pragma once
-
-#include <Arduino.h>
+#include <stdint.h>
 
 class Led {
    public:
@@ -9,11 +8,7 @@ class Led {
     Led(uint8_t pin, bool inv, float freq, int maxValue = 1023)
         : m_ledPin(pin), m_inv(inv), m_freq(freq), m_ledMax(maxValue) {}
 
-    void setup() {
-        pinMode(m_ledPin, OUTPUT);
-        analogWriteRange(m_ledMax);
-        setMode(Mode::OFF);
-    }
+    void setup();
 
     void update(unsigned long now);
 

@@ -1,6 +1,12 @@
 #include <ESP8266WiFi.h>
 #include <Led.h>
 
+void Led::setup() {
+    pinMode(m_ledPin, OUTPUT);
+    analogWriteRange(m_ledMax);
+    setMode(Mode::OFF);
+}
+
 void Led::update(unsigned long now) {
     float elapsedSec;
     float deltaBrightness;
