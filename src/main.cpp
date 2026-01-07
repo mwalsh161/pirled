@@ -1,4 +1,5 @@
 #include <Controller.h>
+#include <ESP8266HTTPClient.h>
 #include <ESP8266WiFi.h>
 #include <limits.h>
 #include <pins.h>
@@ -7,14 +8,25 @@
 #include "PortalServer.h"
 
 #define WIFI_TIMEOUT_MS 10000
+#define CONFIG_SERVER_URL "http://192.168.1.100:8080/api/config"
+// TODO: mdns for URL
+// Remove Serial as trigger for fetch
+// Deepsleep chip using PIR as wake source
 
 struct ControllerConfig {
     Controller controller;
     uint8_t pirMask;
 };
 
+struct FetchConfigResult {
+    bool success;
+    uint8_t key;
+    String message;
+};
+
 Led statusLed{D4, true, 2};
 
+WiFiClient wifiClient;
 std::array<u_int8_t, 4> pirPins{D2, D5, D6, D7};
 std::array<ControllerConfig, 4> configs{{
     {Controller{Led{D1, false, 0.3}}, 1 << 0},
@@ -79,6 +91,53 @@ void setup() {
     statusLed.update(millis());
 }
 
+FetchConfigResult fetchConfigFromServer() {
+    HTTPClient http;
+    http.begin(wifiClient, CONFIG_SERVER_URL);
+
+    int httpCode = http.GET();
+    if (httpCode != HTTP_CODE_OK) {
+        return {false, 0, String("HTTP request failed: ") + httpCode};
+    }
+
+    // Expected size: 1 key byte + N mask bytes
+    int expectedSize = 1 + configs.size();
+    if (http.getSize() != expectedSize) {
+        String msg =
+            String("Invalid payload size: ") + http.getSize() + " (expected " + expectedSize + ")";
+        http.end();
+        return {false, 0, msg};
+    }
+
+    WiFiClient* stream = http.getStreamPtr();
+    uint8_t key = 0;
+
+    // Read key byte
+    if (!stream->available()) {
+        http.end();
+        return {false, 0, "Incomplete payload from server"};
+    }
+    key = stream->read();
+
+    // Read mask bytes
+    uint8_t masks[configs.size()];
+    for (size_t i = 0; i < configs.size(); i++) {
+        if (!stream->available()) {
+            http.end();
+            return {false, key, "Incomplete payload from server"};
+        }
+        masks[i] = stream->read();
+    }
+
+    // Apply the masks
+    for (size_t i = 0; i < configs.size(); i++) {
+        configs[i].pirMask = masks[i];
+    }
+
+    http.end();
+    return {true, key, "Config fetched successfully"};
+}
+
 void handleSerialCommand() {
     if (!Serial.available()) return;
 
@@ -103,11 +162,23 @@ void handleSerialCommand() {
         for (size_t i = 0; i < configs.size(); i++) {
             Serial.printf("%d: %d\n", i, configs[i].pirMask);
         }
+    } else if (command == "FETCH") {
+        // Fetch config from server
+        Serial.println("Fetching config from server...");
+        auto result = fetchConfigFromServer();
+
+        HTTPClient confirmHttp;
+        confirmHttp.begin(wifiClient, CONFIG_SERVER_URL);
+        confirmHttp.POST(&result.key, 1);
+        confirmHttp.end();
+        Serial.printf("%s (key: %d)\n", result.message.c_str(), result.key);
+
     } else if (command.length() > 0) {
         Serial.println("ERROR: Unknown command");
         Serial.println("Available commands:");
         Serial.println("  GET - Show all masks");
         Serial.println("  SET <mask0> <mask1> <mask2> <mask3> - Set all masks");
+        Serial.println("  FETCH - Fetch config from server");
     }
 }
 
