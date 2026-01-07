@@ -7,52 +7,44 @@ void Led::setup() {
     setMode(Mode::OFF);
 }
 
+int getDeltaBrightness(unsigned long elapsedMs, float freq, int ledMax) {
+    return static_cast<int>(freq * 2.0f * ledMax * elapsedMs / 1000.0f);
+}
+
 void Led::update(unsigned long now) {
-    float elapsedSec;
-    float deltaBrightness;
+    int deltaBrightness;
+    // If m_lastUpdate==0, initialize timing for the current mode here
+    // We spend one update cycle purely to make sure timing is correct.
+    if (m_lastUpdate == 0) {
+        m_lastUpdate = now;
+        return;
+    }
 
     switch (m_mode) {
         case Mode::OFF:
             m_brightness = 0;
-            m_lastUpdate = now;
             break;
 
         case Mode::FADE_OFF:
-            if (m_lastUpdate == 0) {
-                m_brightness = m_ledMax;
-                m_lastUpdate = now;
-                break;
-            }
-            elapsedSec = (now - m_lastUpdate) / 1000.0f;  // convert ms to seconds
-            deltaBrightness = m_freq * 2.0f * m_ledMax * elapsedSec;
-
-            if (deltaBrightness >= 1) {
-                m_brightness = max(0, m_brightness - m_fadeDirection * (int)deltaBrightness);
+            deltaBrightness = getDeltaBrightness(now - m_lastUpdate, m_freq, m_ledMax);
+            if (deltaBrightness) {
+                m_brightness = max(0, m_brightness - deltaBrightness);
                 m_lastUpdate = now;
             }
             break;
 
         case Mode::FADE_ON:
-            if (m_lastUpdate == 0) {
-                m_brightness = 0;
-                m_lastUpdate = now;
-                break;
-            }
-            elapsedSec = (now - m_lastUpdate) / 1000.0f;  // convert ms to seconds
-            deltaBrightness = m_freq * 2.0f * m_ledMax * elapsedSec;
-
-            if (deltaBrightness >= 1) {
-                m_brightness = min(m_ledMax, m_brightness + m_fadeDirection * (int)deltaBrightness);
+            deltaBrightness = getDeltaBrightness(now - m_lastUpdate, m_freq, m_ledMax);
+            if (deltaBrightness) {
+                m_brightness = min(m_ledMax, m_brightness + deltaBrightness);
                 m_lastUpdate = now;
             }
             break;
 
         case Mode::FADE:
-            elapsedSec = (now - m_lastUpdate) / 1000.0f;  // convert ms to seconds
-            deltaBrightness = m_freq * 2.0f * m_ledMax * elapsedSec;
-
-            if (deltaBrightness >= 1) {
-                m_brightness += m_fadeDirection * (int)deltaBrightness;
+            deltaBrightness = getDeltaBrightness(now - m_lastUpdate, m_freq, m_ledMax);
+            if (deltaBrightness) {
+                m_brightness += m_fadeDirection * deltaBrightness;
 
                 // Bounce at the bounds
                 if (m_brightness <= 0) {

@@ -13,6 +13,9 @@ class Controller {
 
     void update(unsigned long now);
 
+    void enable();
+    void disable();
+
    private:
     enum class State {
         OFF,
@@ -24,4 +27,5 @@ class Controller {
     uint8_t m_sensePin;
     State m_state = State::OFF;
     unsigned long m_offRequested = 0;
+    bool m_enabled = true;
 };

@@ -2,7 +2,17 @@
 
 #define TIMEOFF_WAIT 10000
 
+void Controller::enable() { m_enabled = true; }
+void Controller::disable() {
+    m_enabled = false;
+    m_led.setMode(Led::Mode::OFF);
+    m_state = State::OFF;
+    m_led.update(1);  // force LED off immediately (note that 0 is special)
+}
 void Controller::update(unsigned long now) {
+    if (!m_enabled) {
+        return;
+    }
     bool pirActive = (digitalRead(m_sensePin) == HIGH);
 
     switch (m_state) {

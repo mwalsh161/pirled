@@ -8,8 +8,14 @@
 
 #define WIFI_TIMEOUT_MS 10000
 
-Led statusLed = Led(D4, true, 2);
-Controller controller = Controller(Led(D1, false, 0.3), D2);
+Led statusLed{D4, true, 2};
+
+std::array<Controller, 4> controllers = {{
+    Controller{Led{D1, false, 0.3}, D2},
+    Controller{Led{D3, false, 0.3}, D5},
+    Controller{Led{D4, false, 0.3}, D6},
+    Controller{Led{D8, false, 0.3}, D7},
+}};
 
 /* ---------------- Arduino ---------------- */
 
@@ -47,7 +53,10 @@ void runPortalBlocking() {
 void setup() {
     Serial.begin(115200);
     statusLed.setup();
-    controller.setup();
+
+    for (size_t i = 0; i < controllers.size(); i++) {
+        controllers[i].setup();
+    }
 
     WiFi.mode(WIFI_STA);
     WiFi.persistent(true);
@@ -63,5 +72,7 @@ void setup() {
 
 void loop() {
     unsigned long now = millis();
-    controller.update(now);
+    for (size_t i = 0; i < controllers.size(); i++) {
+        controllers[i].update(now);
+    }
 }

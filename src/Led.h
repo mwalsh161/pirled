@@ -13,7 +13,10 @@ class Led {
     void update(unsigned long now);
 
     void setFreq(float freq) { m_freq = freq; };
-    void setMode(Mode mode) { m_mode = mode; };
+    void setMode(Mode mode) {
+        m_mode = mode;
+        m_lastUpdate = 0;
+    };
     Mode getMode() const { return m_mode; }
 
    private:
