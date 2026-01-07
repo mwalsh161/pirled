@@ -70,7 +70,7 @@ void Led::update(unsigned long now) {
 }
 
 void Led::applyOutput() {
-    int pwmValue = m_brightness;
+    auto pwmValue = m_brightness;
     if (m_inv) {
         pwmValue = m_ledMax - pwmValue;
     }
