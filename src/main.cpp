@@ -79,9 +79,43 @@ void setup() {
     statusLed.update(millis());
 }
 
+void handleSerialCommand() {
+    if (!Serial.available()) return;
+
+    auto command = Serial.readStringUntil('\n');
+    command.trim();
+
+    if (command.startsWith("SET")) {
+        // Format: SET <mask0> <mask1> <mask2> <mask3>
+        // Example: SET 1 2 4 8
+        int m0, m1, m2, m3;
+        if (sscanf(command.c_str(), "SET %d %d %d %d", &m0, &m1, &m2, &m3) == 4) {
+            configs[0].pirMask = m0;
+            configs[1].pirMask = m1;
+            configs[2].pirMask = m2;
+            configs[3].pirMask = m3;
+            Serial.println("OK: All masks updated");
+        } else {
+            Serial.println("ERROR: Usage: SET <mask0> <mask1> <mask2> <mask3>");
+        }
+    } else if (command == "GET") {
+        // Show all masks
+        for (size_t i = 0; i < configs.size(); i++) {
+            Serial.printf("%d: %d\n", i, configs[i].pirMask);
+        }
+    } else if (command.length() > 0) {
+        Serial.println("ERROR: Unknown command");
+        Serial.println("Available commands:");
+        Serial.println("  GET - Show all masks");
+        Serial.println("  SET <mask0> <mask1> <mask2> <mask3> - Set all masks");
+    }
+}
+
 void loop() {
     u_int8_t pirStates = 0;
     auto now = millis();
+
+    handleSerialCommand();
 
     for (size_t i = 0; i < pirPins.size(); i++) {
         pirStates |= (digitalRead(pirPins[i]) == HIGH) << i;
