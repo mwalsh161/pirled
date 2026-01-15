@@ -12,7 +12,7 @@ class Controller {
         WAITING_OFF  // PIR inactive, off timer running
     };
 
-    Controller(Led&& led) : m_led(std::move(led)) {}
+    Controller(Led&& led, const uint32_t& onTimeMs) : m_led(std::move(led)), m_onTimeMs(onTimeMs) {}
 
     void setup() { m_led.setup(); }
 
@@ -24,6 +24,8 @@ class Controller {
 
    private:
     Led m_led;
+    const uint32_t& m_onTimeMs;
+
     State m_state = State::OFF;
     unsigned long m_offRequested = 0;
 };

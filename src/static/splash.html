@@ -12,8 +12,9 @@ R"rawliteral(
     <body>
         <h2>Configure WiFi</h2>
         <form action="/save" method="POST">
-            <input name="ssid" placeholder="SSID" required>
-            <input name="pass" placeholder="Password" type="password">
+            <input name="ssid" placeholder="SSID" required maxlength="31">
+            <input name="pass" placeholder="Password" type="password" maxlength="31">
+            <input name="host" placeholder="Hostname" maxlength="31">
             <button type="submit">Save</button>
         </form>
     </body>

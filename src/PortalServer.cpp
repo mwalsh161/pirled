@@ -1,5 +1,6 @@
 #include "PortalServer.h"
 
+#include <Config.h>
 #include <ESP8266WiFi.h>
 
 #define DNS_PORT 53
@@ -14,6 +15,24 @@ const static char SPLASH_HTML[] PROGMEM =
 const static char SPLASH_HTML[] PROGMEM = "";
 #endif
 
+bool safeCopyString(const String& src, char* dest, size_t destSize) {
+    if (src.length() >= destSize) return false;  // too long
+    src.toCharArray(dest, destSize);             // copies + null terminator
+    return true;
+}
+
+bool validateArg(ESP8266WebServer& server, const char* name, char* dest, size_t destSize) {
+    if (!server.hasArg(name) || server.arg(name).length() == 0) {
+        server.send(400, "text/html", String("<h2>Missing or empty field: ") + name + "</h2>");
+        return false;
+    }
+    if (!safeCopyString(server.arg(name), dest, destSize)) {
+        server.send(400, "text/html", String("<h2>Field too long: ") + name + "</h2>");
+        return false;
+    }
+    return true;
+}
+
 PortalServer::PortalServer() : m_server(80) {
     WiFi.mode(WIFI_AP);
     delay(100);
@@ -21,12 +40,17 @@ PortalServer::PortalServer() : m_server(80) {
     m_dns.start(DNS_PORT, "*", WiFi.softAPIP());
 
     m_server.on("/save", HTTP_POST, [this]() {
+        if (!validateArg(m_server, "ssid", g_config.wifiSsid, sizeof(g_config.wifiSsid)) ||
+            !validateArg(m_server, "pass", g_config.wifiPassword, sizeof(g_config.wifiPassword)) ||
+            !validateArg(m_server, "host", g_config.hostname, sizeof(g_config.hostname))) {
+            return;  // error already sent
+        }
+        saveConfig();  // save immediately
+
         m_server.send(200, "text/html", "<h2>Saved. Rebooting...</h2>");
         m_server.client().flush();
         delay(500);
 
-        // We call begin to save creds, then reoboot to actually connect.
-        WiFi.begin(m_server.arg("ssid").c_str(), m_server.arg("pass").c_str());
         ESP.restart();
     });
 

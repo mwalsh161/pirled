@@ -1,7 +1,5 @@
 #include "Controller.h"
 
-#define TIMEOFF_WAIT 10000
-
 void Controller::update(unsigned long now, bool pirActive) {
     switch (m_state) {
         case Controller::State::OFF:
@@ -21,7 +19,7 @@ void Controller::update(unsigned long now, bool pirActive) {
         case Controller::State::WAITING_OFF:
             if (pirActive) {
                 m_state = Controller::State::ON;
-            } else if ((long)(now - m_offRequested) >= TIMEOFF_WAIT) {
+            } else if (now - m_offRequested >= m_onTimeMs) {
                 m_led.setMode(Led::Mode::FADE_OFF);
                 m_state = Controller::State::OFF;
             }
