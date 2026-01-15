@@ -1,18 +1,13 @@
 #include <Arduino.h>
 #include <Config.h>
 #include <EEPROM.h>
+#include <ESP8266mDNS.h>
 #include <ErriezCRC32.h>
 
 static constexpr uint32_t CONFIG_MAGIC = 0x5049524C;  // "PIRL"
 static constexpr uint16_t CONFIG_VERSION = 1;
 
 Config g_config;  // Externally visible config instance.
-
-static uint32_t saveDebounceTimeMs = 60000;
-static auto lastRequestTime = millis();
-static bool saveRequested = false;
-static uint32_t configSaves = 0;
-static bool storedConfigValid = false;
 
 uint32_t computeCrc(const Config& cfg) {
     return crc32Buffer(reinterpret_cast<const uint8_t*>(&cfg), offsetof(Config, crc));
@@ -43,52 +38,52 @@ void setConfigDefaults() {
     g_config.crc = computeCrc(g_config);
 }
 
-void initConfig() {
+bool initConfig() {
     EEPROM.begin(sizeof(Config));
     EEPROM.get(0, g_config);
 
-    storedConfigValid = g_config.magic == CONFIG_MAGIC && g_config.version == CONFIG_VERSION &&
-                        g_config.crc == computeCrc(g_config);
+    bool valid = g_config.magic == CONFIG_MAGIC && g_config.version == CONFIG_VERSION &&
+                 g_config.crc == computeCrc(g_config);
 
-    if (!storedConfigValid) {
+    if (!valid) {
         setConfigDefaults();
-        saveRequested = true;
     }
+    return valid;
 }
 
-void saveConfig() {
+bool saveConfig() {
     Config stored;
     EEPROM.get(0, stored);
     if (memcmp(&stored, &g_config, sizeof(Config)) == 0) {
-        return;
+        return false;
     }
 
     g_config.crc = computeCrc(g_config);
     EEPROM.put(0, g_config);
     EEPROM.commit();
-    configSaves++;
+    return true;
 }
 
-ConfigServer::ConfigServer() : m_server(80) {
-    initConfig();
+ConfigServer::ConfigServer(const char* serviceName) : m_server(80), m_serviceName(serviceName) {
+    m_storedConfigValid = initConfig();
 
     m_server.on("/save", HTTP_POST, [this]() {
-        saveRequested = true;
-        lastRequestTime = millis();
+        m_saveRequested = true;
+        m_lastRequestTime = millis();
 
         m_server.send(200);
     });
 
     m_server.on("/save_debounce", HTTP_POST, [this]() {
-        saveDebounceTimeMs = m_server.arg("debounce").toInt();
+        m_saveDebounceTimeMs = m_server.arg("debounce").toInt();
         m_server.send(200);
     });
     m_server.on("/save_debounce", HTTP_GET,
-                [this]() { m_server.send(200, "application/json", String(saveDebounceTimeMs)); });
+                [this]() { m_server.send(200, "application/json", String(m_saveDebounceTimeMs)); });
     m_server.on("/config", HTTP_GET, [this]() {
         String json = "{";
-        json += "\"saves\":" + String(configSaves) + ",";
-        json += "\"storedValid\":" + String(storedConfigValid ? "true" : "false") + ",";
+        json += "\"saves\":" + String(m_configSaves) + ",";
+        json += "\"storedValid\":" + String(m_storedConfigValid ? "true" : "false") + ",";
         json += "\"hostname\":\"" + String(g_config.hostname) + "\",";
         json += "\"ledConfig\":[";
         for (size_t i = 0; i < g_config.ledConfig.size(); i++) {
@@ -141,18 +136,28 @@ ConfigServer::ConfigServer() : m_server(80) {
     });
 
     m_server.on("/config/save", HTTP_POST, [this]() {
-        saveRequested = true;
-        lastRequestTime = millis();
+        m_saveRequested = true;
+        m_lastRequestTime = millis();
 
         m_server.send(200);
     });
 }
 
+void ConfigServer::begin() {
+    m_server.begin();
+    MDNS.begin(g_config.hostname);
+    MDNS.addService("http", "tcp", 80);
+    MDNS.addServiceTxt("http", "tcp", "role", m_serviceName);
+}
+
 void ConfigServer::handle(unsigned long now) {
     m_server.handleClient();
+    MDNS.update();
 
-    if (saveRequested && (now - lastRequestTime >= saveDebounceTimeMs)) {
-        saveConfig();
-        saveRequested = false;
+    if (m_saveRequested && (now - m_lastRequestTime >= m_saveDebounceTimeMs)) {
+        if (saveConfig()) {
+            m_configSaves++;
+        }
+        m_saveRequested = false;
     }
 }

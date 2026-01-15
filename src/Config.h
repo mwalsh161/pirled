@@ -26,17 +26,23 @@ struct Config {
 
 extern Config g_config;
 
-void saveConfig();  // Use with care to avoid eeprom wear.
+bool saveConfig();  // Use with care to avoid eeprom wear.
 
 class ConfigServer {
    public:
-    ConfigServer();
+    ConfigServer(const char* serviceName);
 
-    void begin() { m_server.begin(); }
+    void begin();
 
     ~ConfigServer() { m_server.stop(); }
     void handle(unsigned long now);
 
    private:
     ESP8266WebServer m_server;
+    const char* m_serviceName;
+    unsigned long m_saveDebounceTimeMs = 60000;
+    unsigned long m_lastRequestTime = 0;
+    bool m_saveRequested = false;
+    bool m_storedConfigValid = false;
+    uint32_t m_configSaves = 0;
 };

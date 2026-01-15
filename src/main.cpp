@@ -30,7 +30,7 @@ std::array<ControllerConfig, 4> configs = {{
 }};
 std::array<uint8_t, 4> pirPins{D6, D7, D2, D5};
 
-ConfigServer configServer;
+ConfigServer configServer{"pirled_controller"};
 
 /* ---------------- Arduino ---------------- */
 
