@@ -64,24 +64,42 @@ bool saveConfig() {
     EEPROM.commit();
     return true;
 }
+void addCors(ESP8266WebServer& server) {
+    server.sendHeader("Access-Control-Allow-Origin", "*");
+    server.sendHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    server.sendHeader("Access-Control-Allow-Headers", "Content-Type");
+};
 
 ConfigServer::ConfigServer(const char* serviceName) : m_server(80), m_serviceName(serviceName) {
     m_storedConfigValid = initConfig();
 
-    m_server.on("/save", HTTP_POST, [this]() {
+    // Handle preflight OPTIONS requests
+    auto handleOptions = [&]() {
+        addCors(m_server);
+        m_server.send(204);  // No Content
+    };
+
+    m_server.on("/save", HTTP_POST, [&]() {
         m_saveRequested = true;
         m_lastRequestTime = millis();
 
+        addCors(m_server);
         m_server.send(200);
     });
+    m_server.on("/save", HTTP_OPTIONS, handleOptions);
 
-    m_server.on("/save_debounce", HTTP_POST, [this]() {
+    m_server.on("/save_debounce", HTTP_POST, [&]() {
         m_saveDebounceTimeMs = m_server.arg("val").toInt();
+        addCors(m_server);
         m_server.send(200);
     });
-    m_server.on("/save_debounce", HTTP_GET,
-                [this]() { m_server.send(200, "application/json", String(m_saveDebounceTimeMs)); });
-    m_server.on("/config", HTTP_GET, [this]() {
+    m_server.on("/save_debounce", HTTP_GET, [&]() {
+        addCors(m_server);
+        m_server.send(200, "application/json", String(m_saveDebounceTimeMs));
+    });
+    m_server.on("/save_debounce", HTTP_OPTIONS, handleOptions);
+
+    m_server.on("/config", HTTP_GET, [&]() {
         String json = "{";
         json += "\"saves\":" + String(m_configSaves) + ",";
         json += "\"storedValid\":" + String(m_storedConfigValid ? "true" : "false") + ",";
@@ -99,9 +117,12 @@ ConfigServer::ConfigServer(const char* serviceName) : m_server(80), m_serviceNam
         json += "]";
         json += "}";
 
+        addCors(m_server);
         m_server.send(200, "application/json", json);
     });
-    m_server.on("/config/network", HTTP_POST, [this]() {
+    m_server.on("/config", HTTP_OPTIONS, handleOptions);
+
+    m_server.on("/config/network", HTTP_POST, [&]() {
         if (m_server.hasArg("hostname")) {
             cpstr(g_config.hostname, m_server.arg("hostname").c_str(), sizeof(g_config.hostname));
         }
@@ -113,9 +134,14 @@ ConfigServer::ConfigServer(const char* serviceName) : m_server(80), m_serviceNam
                   sizeof(g_config.wifiPassword));
         }
         m_lastRequestTime = millis();
+        addCors(m_server);
         m_server.send(200);
     });
-    m_server.on("/config/led", HTTP_POST, [this]() {
+    m_server.on("/config/network", HTTP_OPTIONS, handleOptions);
+
+    m_server.on("/config/led", HTTP_POST, [&]() {
+        addCors(m_server);
+
         size_t i = m_server.arg("index").toInt();
         if (i >= g_config.ledConfig.size()) {
             m_server.send(400, "text/html", "Invalid LED index");
@@ -123,13 +149,14 @@ ConfigServer::ConfigServer(const char* serviceName) : m_server(80), m_serviceNam
         }
 
         if (m_server.hasArg("brightness")) {
-            g_config.ledConfig[i].brightness = m_server.arg("brightness").toInt();
+            g_config.ledConfig[i].brightness =
+                max(min((int)m_server.arg("brightness").toInt(), 1023), 0);
         }
         if (m_server.hasArg("onTimeMs")) {
             g_config.ledConfig[i].onTimeMs = m_server.arg("onTimeMs").toInt();
         }
         if (m_server.hasArg("fadeFreq")) {
-            g_config.ledConfig[i].fadeFreq = m_server.arg("fadeFreq").toFloat();
+            g_config.ledConfig[i].fadeFreq = max(m_server.arg("fadeFreq").toFloat(), 0.0f);
         }
         if (m_server.hasArg("pirMask")) {
             g_config.ledConfig[i].pirMask = static_cast<uint8_t>(m_server.arg("pirMask").toInt());
@@ -137,17 +164,21 @@ ConfigServer::ConfigServer(const char* serviceName) : m_server(80), m_serviceNam
         m_lastRequestTime = millis();
         m_server.send(200);
     });
+    m_server.on("/config/led", HTTP_OPTIONS, handleOptions);
 
-    m_server.on("/config/save", HTTP_POST, [this]() {
+    m_server.on("/config/save", HTTP_POST, [&]() {
         m_lastRequestTime = millis();
         m_saveRequested = true;
 
+        addCors(m_server);
         m_server.send(200);
     });
+    m_server.on("/config/save", HTTP_OPTIONS, handleOptions);
 
-    m_server.on("/pir_override", HTTP_POST, [this]() {
+    m_server.on("/pir_override", HTTP_POST, [&]() {
         // This gets ORed with what pins read.
         // In general, best practice is to only set the 4 MSBs for the virtual PIRs.
+        addCors(m_server);
         if (!m_server.hasArg("val")) {
             m_server.send(400, "text/html", "Missing val parameter");
             return;
@@ -155,10 +186,13 @@ ConfigServer::ConfigServer(const char* serviceName) : m_server(80), m_serviceNam
         m_pirOverrides = static_cast<PirStates>(m_server.arg("val").toInt());
         m_server.send(200);
     });
-    m_server.on("/pir_override", HTTP_GET,
-                [this]() { m_server.send(200, "application/json", String(m_pirOverrides)); });
+    m_server.on("/pir_override", HTTP_GET, [&]() {
+        addCors(m_server);
+        m_server.send(200, "application/json", String(m_pirOverrides));
+    });
+    m_server.on("/pir_override", HTTP_OPTIONS, handleOptions);
 
-    m_server.on("/status", HTTP_GET, [this]() {
+    m_server.on("/status", HTTP_GET, [&]() {
         String json = "{";
         json += "\"pir\":" + String(m_pirStates) + ",";
         json += "\"leds\":[";
@@ -168,8 +202,10 @@ ConfigServer::ConfigServer(const char* serviceName) : m_server(80), m_serviceNam
         }
         json += "]";
         json += "}";
+        addCors(m_server);
         m_server.send(200, "application/json", json);
     });
+    m_server.on("/status", HTTP_OPTIONS, handleOptions);
 }
 
 void ConfigServer::begin() {
