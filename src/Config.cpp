@@ -4,6 +4,8 @@
 #include <ESP8266mDNS.h>
 #include <ErriezCRC32.h>
 
+#define VIRTUAL_PIR 4
+
 static constexpr uint32_t CONFIG_MAGIC = 0x5049524C;  // "PIRL"
 static constexpr uint16_t CONFIG_VERSION = 1;
 
@@ -29,10 +31,9 @@ void setConfigDefaults() {
     cpstr(g_config.wifiPassword, "", sizeof(g_config.wifiPassword));
 
     for (size_t i = 0; i < g_config.ledConfig.size(); i++) {
-        g_config.ledConfig[i] = {.brightness = 1023,
-                                 .onTimeMs = 10000,
-                                 .fadeFreq = 0.3f,
-                                 .pirMask = static_cast<uint8_t>(1 << i)};
+        uint8_t pirMask = (1 << i) | (1 << (i + VIRTUAL_PIR));
+        g_config.ledConfig[i] = {
+            .brightness = 1023, .onTimeMs = 10000, .fadeFreq = 0.3f, .pirMask = pirMask};
     }
 
     g_config.crc = computeCrc(g_config);
@@ -75,7 +76,7 @@ ConfigServer::ConfigServer(const char* serviceName) : m_server(80), m_serviceNam
     });
 
     m_server.on("/save_debounce", HTTP_POST, [this]() {
-        m_saveDebounceTimeMs = m_server.arg("debounce").toInt();
+        m_saveDebounceTimeMs = m_server.arg("val").toInt();
         m_server.send(200);
     });
     m_server.on("/save_debounce", HTTP_GET,
@@ -136,11 +137,24 @@ ConfigServer::ConfigServer(const char* serviceName) : m_server(80), m_serviceNam
     });
 
     m_server.on("/config/save", HTTP_POST, [this]() {
-        m_saveRequested = true;
         m_lastRequestTime = millis();
+        m_saveRequested = true;
 
         m_server.send(200);
     });
+
+    m_server.on("/pir_override", HTTP_POST, [this]() {
+        // This gets ORed with what pins read.
+        // In general, best practice is to only set the 4 MSBs for the virtual PIRs.
+        if (!m_server.hasArg("val")) {
+            m_server.send(400, "text/html", "Missing val parameter");
+            return;
+        }
+        m_pirOverrides = static_cast<PirStates>(m_server.arg("val").toInt());
+        m_server.send(200);
+    });
+    m_server.on("/pir_override", HTTP_GET,
+                [this]() { m_server.send(200, "application/json", String(m_pirOverrides)); });
 }
 
 void ConfigServer::begin() {
@@ -151,13 +165,14 @@ void ConfigServer::begin() {
 }
 
 void ConfigServer::handle(unsigned long now) {
-    m_server.handleClient();
-    MDNS.update();
-
     if (m_saveRequested && (now - m_lastRequestTime >= m_saveDebounceTimeMs)) {
         if (saveConfig()) {
             m_configSaves++;
         }
         m_saveRequested = false;
     }
+
+    // This has to come last since it may call millis (now has already been grabbed for this loop).
+    MDNS.update();
+    m_server.handleClient();
 }

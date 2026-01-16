@@ -5,6 +5,8 @@
 
 #include <array>
 
+typedef uint8_t PirStates;
+
 struct LedConfig {
     int brightness;
     uint32_t onTimeMs;
@@ -37,6 +39,8 @@ class ConfigServer {
     ~ConfigServer() { m_server.stop(); }
     void handle(unsigned long now);
 
+    PirStates getPirOverrides() { return m_pirOverrides; }
+
    private:
     ESP8266WebServer m_server;
     const char* m_serviceName;
@@ -45,4 +49,6 @@ class ConfigServer {
     bool m_saveRequested = false;
     bool m_storedConfigValid = false;
     uint32_t m_configSaves = 0;
+
+    PirStates m_pirOverrides = 0;
 };

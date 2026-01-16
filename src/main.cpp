@@ -77,7 +77,7 @@ void setup() {
         runPortalBlocking();
     }  // Will not return unless connected.
 
-    for (auto pin : pirPins) {
+    for (const auto& pin : pirPins) {
         pinMode(pin, INPUT);
     }
     for (auto& config : configs) {
@@ -90,7 +90,7 @@ void setup() {
 }
 
 void loop() {
-    uint8_t pirStates = 0;
+    PirStates pirStates = 0;
     auto now = millis();
 
     // Consider setting LED state to quickly example config change.
@@ -100,8 +100,9 @@ void loop() {
         pirStates |= (digitalRead(pirPins[i]) == HIGH) << i;
     }
 
-    for (size_t i = 0; i < configs.size(); i++) {
-        auto& config = configs[i];
+    pirStates |= configServer.getPirOverrides();
+
+    for (auto& config : configs) {
         config.controller.update(now, pirStates & config.pirMask);
     }
 }
