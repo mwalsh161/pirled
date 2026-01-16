@@ -112,6 +112,7 @@ ConfigServer::ConfigServer(const char* serviceName) : m_server(80), m_serviceNam
             cpstr(g_config.wifiPassword, m_server.arg("wifiPassword").c_str(),
                   sizeof(g_config.wifiPassword));
         }
+        m_lastRequestTime = millis();
         m_server.send(200);
     });
     m_server.on("/config/led", HTTP_POST, [this]() {
@@ -133,6 +134,7 @@ ConfigServer::ConfigServer(const char* serviceName) : m_server(80), m_serviceNam
         if (m_server.hasArg("pirMask")) {
             g_config.ledConfig[i].pirMask = static_cast<uint8_t>(m_server.arg("pirMask").toInt());
         }
+        m_lastRequestTime = millis();
         m_server.send(200);
     });
 
@@ -155,6 +157,19 @@ ConfigServer::ConfigServer(const char* serviceName) : m_server(80), m_serviceNam
     });
     m_server.on("/pir_override", HTTP_GET,
                 [this]() { m_server.send(200, "application/json", String(m_pirOverrides)); });
+
+    m_server.on("/status", HTTP_GET, [this]() {
+        String json = "{";
+        json += "\"pir\":" + String(m_pirStates) + ",";
+        json += "\"leds\":[";
+        for (size_t i = 0; i < m_ledStates.size(); i++) {
+            if (i > 0) json += ",";
+            json += String(m_ledStates[i]);
+        }
+        json += "]";
+        json += "}";
+        m_server.send(200, "application/json", json);
+    });
 }
 
 void ConfigServer::begin() {

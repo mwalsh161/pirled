@@ -15,7 +15,7 @@ Led statusLed{D4, true, statusFadeFreq, statusBrightness};
 
 struct ControllerConfig {
     Controller controller;
-    uint8_t pirMask;
+    const uint8_t& pirMask;
 };
 
 ControllerConfig makeController(uint8_t pin, const LedConfig& ledCfg) {
@@ -102,7 +102,11 @@ void loop() {
 
     pirStates |= configServer.getPirOverrides();
 
-    for (auto& config : configs) {
-        config.controller.update(now, pirStates & config.pirMask);
+    std::array<uint8_t, configs.size()> ledStates;
+    for (size_t i = 0; i < configs.size(); i++) {
+        configs[i].controller.update(now, pirStates & configs[i].pirMask);
+        ledStates[i] = static_cast<uint8_t>(configs[i].controller.getState());
     }
+
+    configServer.setState(pirStates, ledStates);
 }

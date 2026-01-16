@@ -41,6 +41,15 @@ class ConfigServer {
 
     PirStates getPirOverrides() { return m_pirOverrides; }
 
+    void setState(const PirStates& pirStates, const std::array<uint8_t, 4>& ledStates) {
+        // Copy states for reporting.
+        // Note: called from main loop, no concurrency issues expected.
+        for (size_t i = 0; i < ledStates.size(); i++) {
+            m_ledStates[i] = ledStates[i];
+        }
+        m_pirStates = pirStates;
+    }
+
    private:
     ESP8266WebServer m_server;
     const char* m_serviceName;
@@ -49,6 +58,9 @@ class ConfigServer {
     bool m_saveRequested = false;
     bool m_storedConfigValid = false;
     uint32_t m_configSaves = 0;
+
+    PirStates m_pirStates = 0;
+    std::array<uint8_t, 4> m_ledStates;
 
     PirStates m_pirOverrides = 0;
 };
