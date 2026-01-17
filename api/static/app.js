@@ -127,7 +127,7 @@ function renderPirOverride(dev, pirOverride) {
 
 // ---------- Main SPA ----------
 async function load() {
-    const devices = await fetchJSON("/api/devices");
+    const devices = await fetchJSON("api/devices");
     if (!devices.length) {
         app.innerHTML = "<h3>No pirled_controller discovered</h3>";
         return;
