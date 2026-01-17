@@ -1,0 +1,143 @@
+/* --- Base Typography & Layout --- */
+body {
+    font-family: "Inter", sans-serif;
+    margin: 0;
+    padding: 0;
+    background: #f5f6fa;
+    color: #222;
+}
+
+#app {
+    max-width: 1200px;
+    margin: auto;
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+/* --- Card-style Fieldsets --- */
+fieldset {
+    margin-bottom: 1em;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    padding: 1rem;
+    background: #fff;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+    transition: box-shadow 0.2s;
+}
+
+fieldset:hover {
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+
+legend {
+    font-weight: 600;
+    font-size: 1.05rem;
+}
+
+/* --- Tables --- */
+table {
+    border-collapse: collapse;
+    width: 100%;
+    margin-top: 0.5rem;
+}
+
+td {
+    border: 1px solid #ccc;
+    padding: 4px 8px;
+    text-align: center;
+}
+
+/* --- Inputs & Buttons --- */
+input[type="number"], input[type="text"] {
+    width: 100%;
+    padding: 0.3rem 0.4rem;
+    margin-top: 0.2rem;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 1rem;
+    box-sizing: border-box;
+}
+
+input[type="checkbox"] {
+    transform: scale(1.2);
+    margin-right: 0.3rem;
+    vertical-align: middle;
+}
+
+button {
+    background: #4f8ef7;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    padding: 0.5rem 1rem;
+    cursor: pointer;
+    font-weight: 500;
+    transition: background 0.2s, transform 0.1s;
+    margin-top: 0.3rem;
+}
+
+button:hover {
+    background: #3a70d1;
+}
+
+button:active {
+    transform: scale(0.97);
+}
+
+/* --- Flash Animations (unchanged behavior) --- */
+.flash-success {
+  animation: flashSuccess 0.5s ease;
+}
+
+.flash-failure {
+  animation: flashFailure 0.5s ease;
+}
+
+@keyframes flashSuccess {
+  0%   { background-color: #c8ffc8; }
+  100% { background-color: transparent; }
+}
+
+@keyframes flashFailure {
+  0%   { background-color: #ffc8c8; }
+  100% { background-color: transparent; }
+}
+
+/* Keep flash-wrapper inline-block and minimal padding for visibility */
+.flash-wrapper {
+  display: inline-block;
+  padding: 2px 4px;  /* original preserved */
+  border-radius: 3px; /* original preserved */
+}
+
+/* --- Responsive / Mobile Enhancements --- */
+@media (max-width: 768px) {
+    #app {
+        padding: 0.5rem;
+    }
+
+    fieldset {
+        padding: 0.75rem;
+    }
+
+    input[type="number"], input[type="text"] {
+        font-size: 1rem;
+    }
+
+    button {
+        width: 100%;
+    }
+
+    td {
+        padding: 4px 6px;
+    }
+}
+
+/* --- Optional: subtle hover feedback for checkboxes --- */
+input[type="checkbox"]:hover {
+    cursor: pointer;
+    outline: 2px solid #4f8ef7;
+    outline-offset: 2px;
+}
