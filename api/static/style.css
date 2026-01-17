@@ -141,3 +141,12 @@ input[type="checkbox"]:hover {
     outline: 2px solid #4f8ef7;
     outline-offset: 2px;
 }
+
+input[type="range"] {
+    width: 100%;
+    margin: 0.3rem 0;
+}
+.range-value {
+    margin-left: 0.5rem;
+    font-weight: 500;
+}

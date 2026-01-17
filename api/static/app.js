@@ -76,10 +76,14 @@ function renderLedConfig(dev, config) {
         <legend>LED ${i}</legend>
         
         <label>
-          <span class="flash-wrapper">
+        <span class="flash-wrapper">
             Brightness
-            <input type="number" value="${led.brightness}" min="0" max="1023" data-led="${i}" data-field="brightness">
-          </span>
+            <input type="range"
+                min="0" max="1023"
+                value="${led.brightness}"
+                data-led="${i}" data-field="brightness">
+            <span class="range-value">${led.brightness}</span>
+        </span>
         </label><br>
         
         <label>
@@ -189,6 +193,16 @@ async function load() {
         const inputs = app.querySelectorAll('input');
         
         inputs.forEach(inp => {
+            // Update the numeric value next to the slider in real-time
+            if (inp.type === "range" && inp.dataset.field === "brightness") {
+                inp.addEventListener("input", e => {
+                    const valueSpan = inp.nextElementSibling;
+                    if (valueSpan && valueSpan.classList.contains("range-value")) {
+                        valueSpan.textContent = inp.value;
+                    }
+                });
+            }
+
             inp.addEventListener('change', async e => {
                 const el = e.target;
                 const valueBefore = el.type === "checkbox" ? el.checked : el.value;
