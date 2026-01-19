@@ -136,12 +136,12 @@ async function load() {
     const dev = devices[0];
     
     async function refresh() {
-        const [config, status, pirOverride, saveDebounce] = await Promise.all([
-            fetchJSON(deviceURL(dev, "/config")),
-            fetchJSON(deviceURL(dev, "/status")),
-            fetchJSON(deviceURL(dev, "/pir_override")),
-            fetchJSON(deviceURL(dev, "/save_debounce")),
-        ]);
+        // The ESP8266 is single-threaded and will only recycle connection if there isn't another
+        // client waiting. We'll await each one to improve chance of recycling the connection.
+        const config = await fetchJSON(deviceURL(dev, "/config"));
+	const status = await fetchJSON(deviceURL(dev, "/status"));
+        const pirOverride = await fetchJSON(deviceURL(dev, "/pir_override"));
+	const saveDebounce = await fetchJSON(deviceURL(dev, "/save_debounce"));
         
         const now = new Date().toLocaleTimeString();
         
