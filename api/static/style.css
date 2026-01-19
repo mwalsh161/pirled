@@ -1,4 +1,8 @@
 /* --- Base Typography & Layout --- */
+html {
+    font-size: 18px;
+}
+
 body {
     font-family: "Inter", sans-serif;
     margin: 0;
