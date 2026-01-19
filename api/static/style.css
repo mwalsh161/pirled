@@ -51,7 +51,6 @@ td {
 
 /* --- Inputs & Buttons --- */
 input[type="number"], input[type="text"] {
-    width: 100%;
     padding: 0.3rem 0.4rem;
     margin-top: 0.2rem;
     border: 1px solid #ccc;
@@ -64,6 +63,54 @@ input[type="checkbox"] {
     transform: scale(1.2);
     margin-right: 0.3rem;
     vertical-align: middle;
+}
+
+/* The slider itself */
+input[type="range"] {
+    -webkit-appearance: none; /* remove default styling */
+    width: 100%;              /* full width of container */
+    height: 36px;             /* taller overall height for touch */
+    margin: 0;
+    background: transparent;
+    touch-action: pan-x;      /* prevents vertical scroll while dragging */
+    cursor: pointer;
+}
+
+/* Track (the horizontal bar) */
+input[type="range"]::-webkit-slider-runnable-track {
+    height: 14px;             /* make track taller for easier touch */
+    background: #ddd;
+    border-radius: 7px;
+}
+
+input[type="range"]::-moz-range-track {
+    height: 14px;
+    background: #ddd;
+    border-radius: 7px;
+}
+
+/* Thumb (the draggable circle) */
+input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 28px;              /* bigger thumb */
+    height: 28px;             /* bigger thumb */
+    border-radius: 50%;       /* circular */
+    background: #4f8ef7;      /* thumb color */
+    margin-top: -7px;         /* center thumb on track */
+    cursor: pointer;
+    transition: transform 0.1s, background 0.2s;
+}
+
+input[type="range"]::-webkit-slider-thumb:active {
+    transform: scale(1.1);    /* visual feedback when dragging */
+    background: #3a70d1;
+}
+
+input[type="range"]::-moz-range-thumb {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: #4f8ef7;
 }
 
 button {
@@ -108,6 +155,7 @@ button:active {
 /* Keep flash-wrapper inline-block and minimal padding for visibility */
 .flash-wrapper {
   display: inline-block;
+  width: 100%;
   padding: 2px 4px;  /* original preserved */
   border-radius: 3px; /* original preserved */
 }
@@ -142,11 +190,8 @@ input[type="checkbox"]:hover {
     outline-offset: 2px;
 }
 
-input[type="range"] {
-    width: 100%;
-    margin: 0.3rem 0;
-}
 .range-value {
     margin-left: 0.5rem;
     font-weight: 500;
 }
+

@@ -42,7 +42,7 @@ const STATE_MAP = {
 
 function renderStatus(status) {
     const rows = [];
-    
+
     // Expand PIR masks
     for (let i = 0; i < 8; i++) {
         rows.push(`<tr><td>PIR ${i}</td><td>${!!(status.pir & (1 << i))}</td></tr>`);
@@ -52,7 +52,7 @@ function renderStatus(status) {
         ledMapped.push(STATE_MAP[status.leds[i]] ?? `UNKNOWN (${v})`)
     }
     rows.push(`<tr><td>leds</td><td>${ledMapped.join(", ")}</td></tr>`);
-    
+
     return `<h3>Status</h3><table>${rows.join("")}</table>`;
 }
 
@@ -63,43 +63,43 @@ function renderLedConfig(dev, config) {
             const checked = (led.pirMask & (1 << j)) ? "checked" : "";
             return `
         <label>
-          <span class="flash-wrapper">
+          <div class="flash-wrapper">
             <input type="checkbox" data-led="${i}" data-bit="${j}" ${checked}>
             ${j < 4 ? `PIR ${j}` : `Virtual ${j-4}`}
-          </span>
+          </div>
         </label>
       `;
         }).join("<br>");
-        
+
         return `
       <fieldset>
         <legend>LED ${i}</legend>
-        
+
         <label>
-        <span class="flash-wrapper">
+        <div class="flash-wrapper">
             Brightness
             <input type="range"
                 min="0" max="1023"
                 value="${led.brightness}"
                 data-led="${i}" data-field="brightness">
-            <span class="range-value">${led.brightness}</span>
-        </span>
+            <div class="range-value">${led.brightness}</div>
+        </div>
         </label><br>
-        
+
         <label>
-          <span class="flash-wrapper">
+          <div class="flash-wrapper">
             On Time (ms)
             <input type="number" value="${led.onTimeMs}" min="0" data-led="${i}" data-field="onTimeMs">
-          </span>
+          </div>
         </label><br>
-        
+
         <label>
-          <span class="flash-wrapper">
+          <div class="flash-wrapper">
             Fade Freq
             <input type="number" step="0.1" value="${led.fadeFreq}" min="0" data-led="${i}" data-field="fadeFreq">
-          </span>
+          </div>
         </label><br>
-        
+
         <fieldset>
           <legend>PIR Mask</legend>
           ${pirCheckboxes}
@@ -114,14 +114,14 @@ function renderPirOverride(dev, pirOverride) {
         const checked = (pirOverride & (1 << j)) ? "checked" : "";
         return `
       <label>
-        <span class="flash-wrapper">
+        <div class="flash-wrapper">
           <input type="checkbox" data-field="pir_override" data-bit="${j}" ${checked}>
           ${j < 4 ? `PIR ${j}` : `Virtual ${j-4}`}
-        </span>
+        </div>
       </label>
     `;
     }).join("<br>");
-    
+
     return `<fieldset><legend>PIR Override</legend>${checkboxes}</fieldset>`;
 }
 
@@ -132,19 +132,27 @@ async function load() {
         app.innerHTML = "<h3>No pirled_controller discovered</h3>";
         return;
     }
-    
+
     const dev = devices[0];
-    
+    let sliderUpdateBusy = false;
+
+    async function updateLed(el) {
+        const data = { index: el.dataset.led };
+        data[el.dataset.field] = el.type === "number" ? Number(el.value) : el.value;
+        await postForm(deviceURL(dev, "/config/led"), data);
+    }
+
+
     async function refresh() {
         // The ESP8266 is single-threaded and will only recycle connection if there isn't another
         // client waiting. We'll await each one to improve chance of recycling the connection.
         const config = await fetchJSON(deviceURL(dev, "/config"));
-	const status = await fetchJSON(deviceURL(dev, "/status"));
+        const status = await fetchJSON(deviceURL(dev, "/status"));
         const pirOverride = await fetchJSON(deviceURL(dev, "/pir_override"));
-	const saveDebounce = await fetchJSON(deviceURL(dev, "/save_debounce"));
-        
+        const saveDebounce = await fetchJSON(deviceURL(dev, "/save_debounce"));
+
         const now = new Date().toLocaleTimeString();
-        
+
         app.innerHTML = `
             <p>${dev.name} (${dev.host}:${dev.port})</p>
             <button id="refreshBtn">Refresh</button>
@@ -155,16 +163,16 @@ async function load() {
             ${renderStatus(status)}
             <h3>Save Debounce</h3>
             <button id="saveBtn">Save</button>
-            <span class="flash-wrapper">
+            <div class="flash-wrapper">
                 Debounce
                 <input id="debounce" type="number" value="${saveDebounce}" min="0">
-            </span>
+            </div>
             <h3>LED Configuration</h3>
             ${renderLedConfig(dev, config)}
             <h3>PIR Override</h3>
             ${renderPirOverride(dev, pirOverride)}
         `;
-        
+
         document.getElementById("refreshBtn").onclick = refresh;
 
         const autoRefreshCheckbox = document.getElementById("autoRefresh");
@@ -189,16 +197,27 @@ async function load() {
                 flash(document.getElementById("saveBtn"), false);
             }
         };
-        
+
         const inputs = app.querySelectorAll('input');
-        
+
         inputs.forEach(inp => {
             // Update the numeric value next to the slider in real-time
             if (inp.type === "range" && inp.dataset.field === "brightness") {
-                inp.addEventListener("input", e => {
-                    const valueSpan = inp.nextElementSibling;
-                    if (valueSpan && valueSpan.classList.contains("range-value")) {
-                        valueSpan.textContent = inp.value;
+                inp.addEventListener("input", async e => {
+                    if (sliderUpdateBusy) return;
+                    sliderUpdateBusy = true;
+                    try {
+                        const el = e.target;
+                        await updateLed(el);
+                        const data = { index: el.dataset.led };
+                        data[el.dataset.field] = el.type === "number" ? Number(el.value) : el.value;
+                        await postForm(deviceURL(dev, "/config/led"), data);
+                        const valueSib = el.nextElementSibling;
+                        if (valueSib && valueSib.classList.contains("range-value")) {
+                            valueSib.textContent = el.value;
+                        }
+                    } finally {
+                        sliderUpdateBusy = false;
                     }
                 });
             }
@@ -206,17 +225,16 @@ async function load() {
             inp.addEventListener('change', async e => {
                 const el = e.target;
                 const valueBefore = el.type === "checkbox" ? el.checked : el.value;
-                
+
                 try {
                     if (el.dataset.field === "brightness" || el.dataset.field === "onTimeMs" || el.dataset.field === "fadeFreq") {
-                        const data = { index: el.dataset.led };
-                        data[el.dataset.field] = el.type === "number" ? Number(el.value) : el.value;
-                        await postForm(deviceURL(dev, "/config/led"), data);
+                        await updateLed(el);
                     } else if (el.dataset.field === "pir_override") {
                         const bits = Array.from(app.querySelectorAll('input[data-field="pir_override"]'))
-                        .filter(i => i.checked)
-                        .map(i => i.dataset.bit);
-                        let val = 0; bits.forEach(b => val |= 1 << b);
+                            .filter(i => i.checked)
+                            .map(i => i.dataset.bit);
+                        let val = 0;
+                        bits.forEach(b => val |= 1 << b);
                         await postForm(deviceURL(dev, "/pir_override"), { val });
                     } else if (el.id === "debounce") {
                         await postForm(deviceURL(dev, "/save_debounce"), { val: el.value });
@@ -224,12 +242,13 @@ async function load() {
                         // LED PIR mask
                         const ledIndex = el.dataset.led;
                         const bits = Array.from(app.querySelectorAll(`input[data-led="${ledIndex}"][type="checkbox"]`))
-                        .filter(i => i.checked)
-                        .map(i => i.dataset.bit);
-                        let mask = 0; bits.forEach(b => mask |= 1 << b);
+                            .filter(i => i.checked)
+                            .map(i => i.dataset.bit);
+                        let mask = 0;
+                        bits.forEach(b => mask |= 1 << b);
                         await postForm(deviceURL(dev, "/config/led"), { index: ledIndex, pirMask: mask });
                     }
-                    
+
                     flash(el, true); // success
                 } catch (err) {
                     flash(el, false); // failure
@@ -240,7 +259,7 @@ async function load() {
             });
         });
     }
-    
+
     refresh();
 }
 
