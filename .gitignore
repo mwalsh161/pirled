@@ -1,5 +1,10 @@
+.env
 .pio
 .vscode
 .DS_Store
+
 *.log
 *.log.*
+
+*.pem
+include/ota_public_key.h

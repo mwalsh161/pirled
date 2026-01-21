@@ -1,8 +1,11 @@
 #include <Arduino.h>
+#include <BearSSLHelpers.h>
 #include <Config.h>
 #include <EEPROM.h>
 #include <ESP8266mDNS.h>
 #include <ErriezCRC32.h>
+
+#include "ota_public_key.h"
 
 #define VIRTUAL_PIR 4
 
@@ -10,6 +13,10 @@ static constexpr uint32_t CONFIG_MAGIC = 0x5049524C;  // "PIRL"
 static constexpr uint16_t CONFIG_VERSION = 1;
 
 Config g_config;  // Externally visible config instance.
+
+BearSSL::PublicKey signPubKey(publicKey);
+BearSSL::HashSHA256 hash;
+BearSSL::SigningVerifier sign(&signPubKey);
 
 uint32_t computeCrc(const Config& cfg) {
     return crc32Buffer(reinterpret_cast<const uint8_t*>(&cfg), offsetof(Config, crc));
@@ -72,6 +79,8 @@ void addCors(ESP8266WebServer& server) {
 
 ConfigServer::ConfigServer(const char* serviceName) : m_server(80), m_serviceName(serviceName) {
     m_storedConfigValid = initConfig();
+
+    Update.installSignature(&hash, &sign);
 
     // Handle preflight OPTIONS requests
     auto handleOptions = [&]() {
@@ -213,6 +222,7 @@ void ConfigServer::begin() {
     MDNS.begin(g_config.hostname);
     MDNS.addService("http", "tcp", 80);
     MDNS.addServiceTxt("http", "tcp", "role", m_serviceName);
+    m_ota.begin(false);  // We manage MDNS ourselves.
 }
 
 void ConfigServer::handle(unsigned long now) {
@@ -226,4 +236,5 @@ void ConfigServer::handle(unsigned long now) {
     // This has to come last since it may call millis (now has already been grabbed for this loop).
     MDNS.update();
     m_server.handleClient();
+    m_ota.handle();
 }

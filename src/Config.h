@@ -1,5 +1,6 @@
 #pragma once
 
+#include <ArduinoOTA.h>
 #include <ESP8266WebServer.h>
 #include <stdint.h>
 
@@ -52,6 +53,7 @@ class ConfigServer {
 
    private:
     ESP8266WebServer m_server;
+    ArduinoOTAClass m_ota;
     const char* m_serviceName;
     unsigned long m_saveDebounceTimeMs = 60000;
     unsigned long m_lastRequestTime = 0;
