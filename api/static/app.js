@@ -129,11 +129,11 @@ function renderPirOverride(dev, pirOverride) {
 async function load() {
     const devices = await fetchJSON("api/devices");
     if (!devices.length) {
-        app.innerHTML = "<h3>No pirled_controller discovered</h3>";
+        app.innerHTML = "<h3>No pirled-controller discovered</h3>";
         return;
     }
 
-    const dev = devices[0];
+    const dev = devices[0]; // TODO: Allow selection if multiple
     let sliderUpdateBusy = false;
 
     async function updateLed(el) {

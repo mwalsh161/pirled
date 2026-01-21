@@ -19,9 +19,6 @@ class Controller {
     void update(unsigned long now, bool pirActive);
     State getState() const { return m_state; }
 
-    void enable();
-    void disable();
-
    private:
     Led m_led;
     const uint32_t& m_onTimeMs;

@@ -24,7 +24,7 @@ class Led {
 
     uint8_t m_ledPin;
     bool m_inv;
-    const float& m_freq;
+    const float& m_freq;  // TODO: refactor this...want different on/off ramp times.
     const int& m_ledMax;
 
     int m_fadeDirection = 1;

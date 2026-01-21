@@ -25,14 +25,10 @@ DEVICES: list[Device] = []
 
 class MDNSListener(ServiceListener):
     def add_service(self, zc: Zeroconf, type_: str, name: str) -> None:
+        if not name.startswith("pirled-controller."):
+            return
         info = zc.get_service_info(type_, name)
-        if not info or not info.properties:
-            return
-
-        props = {k.decode(): v.decode() for k, v in info.properties.items() if v}
-        if props.get("role") != "pirled_controller":
-            return
-        assert info.port
+        assert info and info.port
 
         (addr,) = info.parsed_addresses()
 
@@ -60,6 +56,7 @@ threading.Thread(target=start_mdns, daemon=True).start()
 
 @app.get("/api/devices")
 def get_devices():
+    # TODO: ping to validate existing entries
     return JSONResponse(
         [{"host": d.host, "port": d.port, "name": d.name} for d in DEVICES]
     )
@@ -73,8 +70,9 @@ def get_devices():
 app.mount("/", StaticFiles(directory="static", html=True), name="static")
 
 if __name__ == "__main__":
-    import uvicorn
     import sys
+
+    import uvicorn
 
     port = int(sys.argv[1]) if len(sys.argv) == 2 else 8000
 

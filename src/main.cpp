@@ -10,8 +10,7 @@
 #define WIFI_TIMEOUT_MS 10000
 
 float statusFadeFreq = 2.0f;
-int statusBrightness = 1023;
-Led statusLed{D4, true, statusFadeFreq, statusBrightness};
+Led statusLed{D4, true, statusFadeFreq, 1023};  // todo this value is important when inv.
 
 struct ControllerConfig {
     Controller controller;
@@ -23,14 +22,14 @@ ControllerConfig makeController(uint8_t pin, const LedConfig& ledCfg) {
 }
 
 std::array<ControllerConfig, 4> configs = {{
-    makeController(D4, g_config.ledConfig[0]),
+    makeController(D4, g_config.ledConfig[0]),  // oof D4...epileptic on reset.
     makeController(D8, g_config.ledConfig[1]),
     makeController(D1, g_config.ledConfig[2]),
     makeController(D3, g_config.ledConfig[3]),
 }};
 std::array<uint8_t, 4> pirPins{D6, D7, D2, D5};
 
-ConfigServer configServer{"pirled_controller"};
+ConfigServer configServer{"pirled-controller"};
 
 /* ---------------- Arduino ---------------- */
 
@@ -43,7 +42,7 @@ bool waitForWiFi() {
         if (now - start >= WIFI_TIMEOUT_MS) break;
         delay(10);
     }
-    return WiFi.status() == WL_CONNECTED;
+    return WiFi.status() == WL_CONNECTED;  // I've seen this report not connected again...
 }
 
 bool tryConnectStoredWiFi() {
@@ -75,7 +74,7 @@ void setup() {
 
     if (!tryConnectStoredWiFi()) {
         runPortalBlocking();
-    }  // Will not return unless connected.
+    }  // Will not return unless connected (possible it could disconnect again...state machine?).
 
     for (const auto& pin : pirPins) {
         pinMode(pin, INPUT);

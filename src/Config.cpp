@@ -220,8 +220,7 @@ ConfigServer::ConfigServer(const char* serviceName) : m_server(80), m_serviceNam
 void ConfigServer::begin() {
     m_server.begin();
     MDNS.begin(g_config.hostname);
-    MDNS.addService("http", "tcp", 80);
-    MDNS.addServiceTxt("http", "tcp", "role", m_serviceName);
+    MDNS.addService(m_serviceName, "http", "tcp", 80);
     m_ota.begin(false);  // We manage MDNS ourselves.
 }
 
