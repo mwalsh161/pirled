@@ -194,11 +194,38 @@ input[type="checkbox"]:hover {
     outline-offset: 2px;
 }
 
-.range-value {
-    margin-left: 0.5rem;
-    font-weight: 500;
-}
+/* --- State-specifc class --- */
 
 .logs {
     white-space: pre-wrap;
+}
+
+input[type="range"].led-slider {
+    --live: 0;
+    --max: 1023;
+    --pct: calc(var(--live) / var(--max) * 100%);
+}
+
+input[type="range"].led-slider::-webkit-slider-runnable-track {
+    background: linear-gradient(
+        to right,
+        #ffd54f 0%,
+        #ffd54f var(--pct),
+        #444 var(--pct),
+        #444 100%
+    );
+}
+input[type="range"].led-slider::-moz-range-track {
+    background: linear-gradient(
+        to right,
+        #ffd54f 0%,
+        #ffd54f var(--pct),
+        #444 var(--pct),
+        #444 100%
+    );
+}
+
+.pir-active {
+    background: #4caf50;
+    box-shadow: 0 0 4px 3px #4caf50;
 }
