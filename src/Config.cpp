@@ -12,7 +12,7 @@
 static constexpr uint32_t CONFIG_MAGIC = 0x5049524C;  // "PIRL"
 static constexpr uint16_t CONFIG_VERSION = 2;
 
-Config g_config;  // Externally visible config instance.
+Config CONFIG;  // Externally visible config instance.
 
 BearSSL::PublicKey signPubKey(publicKey);
 BearSSL::HashSHA256 hash;
@@ -28,33 +28,33 @@ void cpstr(char* dest, const char* src, size_t destSize) {
 }
 
 void setConfigDefaults() {
-    memset(&g_config, 0, sizeof(g_config));
+    memset(&CONFIG, 0, sizeof(CONFIG));
 
-    g_config.magic = CONFIG_MAGIC;
-    g_config.version = CONFIG_VERSION;
+    CONFIG.magic = CONFIG_MAGIC;
+    CONFIG.version = CONFIG_VERSION;
 
-    cpstr(g_config.hostname, "", sizeof(g_config.hostname));
-    cpstr(g_config.wifiSsid, "", sizeof(g_config.wifiSsid));
-    cpstr(g_config.wifiPassword, "", sizeof(g_config.wifiPassword));
+    cpstr(CONFIG.hostname, "", sizeof(CONFIG.hostname));
+    cpstr(CONFIG.wifiSsid, "", sizeof(CONFIG.wifiSsid));
+    cpstr(CONFIG.wifiPassword, "", sizeof(CONFIG.wifiPassword));
 
-    for (size_t i = 0; i < g_config.ledConfig.size(); i++) {
+    for (size_t i = 0; i < CONFIG.ledConfig.size(); i++) {
         uint8_t pirMask = (1 << i) | (1 << (i + VIRTUAL_PIR));
-        g_config.ledConfig[i] = {.brightness = 1023,
-                                 .rampOnMs = 1000,
-                                 .holdOnMs = 10000,
-                                 .rampOffMs = 1000,
-                                 .pirMask = pirMask};
+        CONFIG.ledConfig[i] = {.brightness = 1023,
+                               .rampOnMs = 1000,
+                               .holdOnMs = 10000,
+                               .rampOffMs = 1000,
+                               .pirMask = pirMask};
     }
 
-    g_config.crc = computeCrc(g_config);
+    CONFIG.crc = computeCrc(CONFIG);
 }
 
 bool initConfig() {
     EEPROM.begin(sizeof(Config));
-    EEPROM.get(0, g_config);
+    EEPROM.get(0, CONFIG);
 
-    bool valid = g_config.magic == CONFIG_MAGIC && g_config.version == CONFIG_VERSION &&
-                 g_config.crc == computeCrc(g_config);
+    bool valid = CONFIG.magic == CONFIG_MAGIC && CONFIG.version == CONFIG_VERSION &&
+                 CONFIG.crc == computeCrc(CONFIG);
 
     if (!valid) {
         setConfigDefaults();
@@ -65,12 +65,12 @@ bool initConfig() {
 bool saveConfig() {
     Config stored;
     EEPROM.get(0, stored);
-    if (memcmp(&stored, &g_config, sizeof(Config)) == 0) {
+    if (memcmp(&stored, &CONFIG, sizeof(Config)) == 0) {
         return false;
     }
 
-    g_config.crc = computeCrc(g_config);
-    EEPROM.put(0, g_config);
+    CONFIG.crc = computeCrc(CONFIG);
+    EEPROM.put(0, CONFIG);
     EEPROM.commit();
     return true;
 }
@@ -110,17 +110,17 @@ ConfigServer::ConfigServer(const char* serviceName) : m_server(80), m_serviceNam
         String json = "{";
         json += "\"saves\":" + String(m_configSaves) + ",";
         json += "\"storedValid\":" + String(m_storedConfigValid ? "true" : "false") + ",";
-        json += "\"hostname\":\"" + String(g_config.hostname) + "\",";
-        json += "\"timestamp\":" + String(g_config.timestamp) + ",";
+        json += "\"hostname\":\"" + String(CONFIG.hostname) + "\",";
+        json += "\"timestamp\":" + String(CONFIG.timestamp) + ",";
         json += "\"ledConfig\":[";
-        for (size_t i = 0; i < g_config.ledConfig.size(); i++) {
+        for (size_t i = 0; i < CONFIG.ledConfig.size(); i++) {
             if (i > 0) json += ",";
             json += "{";
-            json += "\"brightness\":" + String(g_config.ledConfig[i].brightness) + ",";
-            json += "\"rampOnMs\":" + String(g_config.ledConfig[i].rampOnMs) + ",";
-            json += "\"holdOnMs\":" + String(g_config.ledConfig[i].holdOnMs) + ",";
-            json += "\"rampOffMs\":" + String(g_config.ledConfig[i].rampOffMs) + ",";
-            json += "\"pirMask\":" + String(g_config.ledConfig[i].pirMask);
+            json += "\"brightness\":" + String(CONFIG.ledConfig[i].brightness) + ",";
+            json += "\"rampOnMs\":" + String(CONFIG.ledConfig[i].rampOnMs) + ",";
+            json += "\"holdOnMs\":" + String(CONFIG.ledConfig[i].holdOnMs) + ",";
+            json += "\"rampOffMs\":" + String(CONFIG.ledConfig[i].rampOffMs) + ",";
+            json += "\"pirMask\":" + String(CONFIG.ledConfig[i].pirMask);
             json += "}";
         }
         json += "]";
@@ -133,14 +133,14 @@ ConfigServer::ConfigServer(const char* serviceName) : m_server(80), m_serviceNam
 
     m_server.on("/config/network", HTTP_POST, [&]() {
         if (m_server.hasArg("hostname")) {
-            cpstr(g_config.hostname, m_server.arg("hostname").c_str(), sizeof(g_config.hostname));
+            cpstr(CONFIG.hostname, m_server.arg("hostname").c_str(), sizeof(CONFIG.hostname));
         }
         if (m_server.hasArg("wifiSsid")) {
-            cpstr(g_config.wifiSsid, m_server.arg("wifiSsid").c_str(), sizeof(g_config.wifiSsid));
+            cpstr(CONFIG.wifiSsid, m_server.arg("wifiSsid").c_str(), sizeof(CONFIG.wifiSsid));
         }
         if (m_server.hasArg("wifiPassword")) {
-            cpstr(g_config.wifiPassword, m_server.arg("wifiPassword").c_str(),
-                  sizeof(g_config.wifiPassword));
+            cpstr(CONFIG.wifiPassword, m_server.arg("wifiPassword").c_str(),
+                  sizeof(CONFIG.wifiPassword));
         }
         m_lastRequestTime = millis();
         addCors(m_server);
@@ -152,26 +152,26 @@ ConfigServer::ConfigServer(const char* serviceName) : m_server(80), m_serviceNam
         addCors(m_server);
 
         size_t i = m_server.arg("index").toInt();
-        if (i >= g_config.ledConfig.size()) {
+        if (i >= CONFIG.ledConfig.size()) {
             m_server.send(400, "text/html", "Invalid LED index");
             return;
         }
 
         if (m_server.hasArg("brightness")) {
-            g_config.ledConfig[i].brightness =
+            CONFIG.ledConfig[i].brightness =
                 max(min((int)m_server.arg("brightness").toInt(), 1023), 0);
         }
         if (m_server.hasArg("rampOnMs")) {
-            g_config.ledConfig[i].rampOnMs = m_server.arg("rampOnMs").toInt();
+            CONFIG.ledConfig[i].rampOnMs = m_server.arg("rampOnMs").toInt();
         }
         if (m_server.hasArg("holdOnMs")) {
-            g_config.ledConfig[i].holdOnMs = max(m_server.arg("holdOnMs").toFloat(), 0.0f);
+            CONFIG.ledConfig[i].holdOnMs = max(m_server.arg("holdOnMs").toFloat(), 0.0f);
         }
         if (m_server.hasArg("rampOffMs")) {
-            g_config.ledConfig[i].rampOffMs = m_server.arg("rampOffMs").toInt();
+            CONFIG.ledConfig[i].rampOffMs = m_server.arg("rampOffMs").toInt();
         }
         if (m_server.hasArg("pirMask")) {
-            g_config.ledConfig[i].pirMask = static_cast<uint8_t>(m_server.arg("pirMask").toInt());
+            CONFIG.ledConfig[i].pirMask = static_cast<uint8_t>(m_server.arg("pirMask").toInt());
         }
         m_lastRequestTime = millis();
         m_server.send(200);
@@ -183,7 +183,7 @@ ConfigServer::ConfigServer(const char* serviceName) : m_server(80), m_serviceNam
             m_server.send(400, "text/html", "Missing timestamp parameter");
             return;
         }
-        g_config.timestamp = strtoll(m_server.arg("timestamp").c_str(), nullptr, 10);
+        CONFIG.timestamp = strtoll(m_server.arg("timestamp").c_str(), nullptr, 10);
         m_lastRequestTime = millis();
         m_saveRequested = true;
 
@@ -253,7 +253,7 @@ ConfigServer::ConfigServer(const char* serviceName) : m_server(80), m_serviceNam
 
 void ConfigServer::begin() {
     m_server.begin();
-    MDNS.begin(g_config.hostname);
+    MDNS.begin(CONFIG.hostname);
     MDNS.addService(m_serviceName, "http", "tcp", 80);
     m_ota.begin(false);  // We manage MDNS ourselves.
 }

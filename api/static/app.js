@@ -43,9 +43,9 @@ const STATE_MAP = {
 };
 
 // Skeleton for LEDs
-function renderLedSkeleton(ledCount = 0) {
+function renderLedSkeleton(ledCount, pirCount) {
     const leds = Array.from({ length: ledCount }).map((_, i) => {
-        const pirCheckboxes = Array(8).fill(0).map((_, j) => `
+        const pirCheckboxes = Array(pirCount).fill(0).map((_, j) => `
             <label>
                 <div class="flash-wrapper">
                     <input type="checkbox" data-led="${i}" data-bit="${j}">
@@ -103,8 +103,8 @@ function renderLedSkeleton(ledCount = 0) {
 }
 
 // Skeleton for PIR override
-function renderPirOverrideSkeleton() {
-    const checkboxes = Array(8).fill(0).map((_, j) => `
+function renderPirOverrideSkeleton(pirCount) {
+    const checkboxes = Array(pirCount).fill(0).map((_, j) => `
         <label>
             <div class="flash-wrapper">
                 <input type="checkbox" data-field="pir_override" data-bit="${j}">
@@ -171,10 +171,10 @@ async function load() {
         <button id="refreshBtn">Refresh</button>
         
         <h3>LED Configuration</h3>
-        <div id="ledContainer">${renderLedSkeleton(4)}</div>
+        <div id="ledContainer">${renderLedSkeleton(4, 8)}</div>
         
         <h3>PIR Override</h3>
-        <div id="pirOverrideContainer">${renderPirOverrideSkeleton()}</div>
+        <div id="pirOverrideContainer">${renderPirOverrideSkeleton(8)}</div>
         
         <h3>Save Debounce</h3>
         <button id="saveBtn">Save</button>

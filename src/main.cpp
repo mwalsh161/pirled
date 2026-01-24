@@ -1,51 +1,25 @@
-#include <Config.h>
-#include <Controller.h>
 #include <ESP8266WiFi.h>
 #include <limits.h>
 #include <pins.h>
 
+#include "AppState.h"
 #include "Led.h"
 #include "PortalServer.h"
 #include "debug.h"
 
-#define WIFI_TIMEOUT_MS 10000
-
-struct ControllerConfig {
-    Controller controller;
-    const uint8_t& pirMask;
-};
-
-ControllerConfig makeController(uint8_t pin, LedConfig& ledCfg) {
-    return {{pin, ledCfg.brightness, ledCfg.rampOnMs, ledCfg.holdOnMs, ledCfg.rampOffMs},
-            ledCfg.pirMask};
-}
-
-std::array<ControllerConfig, 4> configs = {{
-    makeController(D4, g_config.ledConfig[0]),  // oof D4...epileptic on reset.
-    makeController(D8, g_config.ledConfig[1]),
-    makeController(D1, g_config.ledConfig[2]),
-    makeController(D3, g_config.ledConfig[3]),
-}};
-std::array<uint8_t, 4> pirPins{D6, D7, D2, D5};
-PirStates pirStates = 0;
-
-ConfigServer configServer{"pirled-controller"};  // TODO: use mac addr to make unique
-
-/* ---------------- Arduino ---------------- */
-
 bool waitForWiFi() {
     auto start = millis();
-    while (WiFi.status() != WL_CONNECTED && millis() - start < WIFI_TIMEOUT_MS) {
+    while (WiFi.status() != WL_CONNECTED && millis() - start < 10000) {
         delay(10);
     }
     return WiFi.status() == WL_CONNECTED;  // I've seen this report not connected again...
 }
 
 bool tryConnectStoredWiFi() {
-    if (strlen(g_config.wifiSsid) == 0) return false;
+    if (strlen(CONFIG.wifiSsid) == 0) return false;
 
-    WiFi.setHostname(g_config.hostname);
-    WiFi.begin(g_config.wifiSsid, g_config.wifiPassword);
+    WiFi.setHostname(CONFIG.hostname);
+    WiFi.begin(CONFIG.wifiSsid, CONFIG.wifiPassword);
 
     return waitForWiFi();
 }
@@ -74,38 +48,37 @@ void setup() {
         runPortalBlocking();
     }  // Will not return unless connected (possible it could disconnect again...state machine?).
 
-    for (const auto& pin : pirPins) {
+    for (const auto& pin : PIR_PINS) {
         pinMode(pin, INPUT);
     }
-    for (auto& config : configs) {
+    for (auto& config : LEDS) {
         config.controller.setup();
     }
 
-    // WiFi.macAddress().replace(":", "");
-    configServer.begin();
+    CONFIG_SERVER.begin();
 
     // Link states for reporting.
     std::array<const int16_t*, 4> brightnessPtrs = {};
     std::array<const uint8_t*, 4> statePtrs = {};
-    for (size_t i = 0; i < configs.size(); i++) {
-        brightnessPtrs[i] = configs[i].controller.getBrightnessPtr();
-        statePtrs[i] = reinterpret_cast<const uint8_t*>(configs[i].controller.getStatePtr());
+    for (size_t i = 0; i < LEDS.size(); i++) {
+        brightnessPtrs[i] = LEDS[i].controller.getBrightnessPtr();
+        statePtrs[i] = reinterpret_cast<const uint8_t*>(LEDS[i].controller.getStatePtr());
     }
-    configServer.linkState(&pirStates, statePtrs, brightnessPtrs);
+    CONFIG_SERVER.linkState(&PIR_STATES, statePtrs, brightnessPtrs);
 }
 
 void loop() {
     auto now = millis();
 
-    configServer.handle(now);
+    CONFIG_SERVER.handle(now);
 
-    pirStates = 0;
-    for (size_t i = 0; i < pirPins.size(); i++) {
-        pirStates |= (digitalRead(pirPins[i]) == HIGH) << i;
+    PIR_STATES = 0;
+    for (size_t i = 0; i < PIR_PINS.size(); i++) {
+        PIR_STATES |= (digitalRead(PIR_PINS[i]) == HIGH) << i;
     }
-    pirStates |= configServer.getPirOverrides();
+    PIR_STATES |= CONFIG_SERVER.getPirOverrides();
 
-    for (size_t i = 0; i < configs.size(); i++) {
-        configs[i].controller.update(now, pirStates & configs[i].pirMask);
+    for (size_t i = 0; i < LEDS.size(); i++) {
+        LEDS[i].controller.update(now, PIR_STATES & LEDS[i].pirMask);
     }
 }

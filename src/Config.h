@@ -29,7 +29,7 @@ struct Config {
     uint32_t crc;
 };
 
-extern Config g_config;
+extern Config CONFIG;
 
 bool saveConfig();  // Use with care to avoid eeprom wear.
 

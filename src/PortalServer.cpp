@@ -40,9 +40,9 @@ PortalServer::PortalServer() : m_server(80) {
     m_dns.start(DNS_PORT, "*", WiFi.softAPIP());
 
     m_server.on("/save", HTTP_POST, [this]() {
-        if (!validateArg(m_server, "ssid", g_config.wifiSsid, sizeof(g_config.wifiSsid)) ||
-            !validateArg(m_server, "pass", g_config.wifiPassword, sizeof(g_config.wifiPassword)) ||
-            !validateArg(m_server, "host", g_config.hostname, sizeof(g_config.hostname))) {
+        if (!validateArg(m_server, "ssid", CONFIG.wifiSsid, sizeof(CONFIG.wifiSsid)) ||
+            !validateArg(m_server, "pass", CONFIG.wifiPassword, sizeof(CONFIG.wifiPassword)) ||
+            !validateArg(m_server, "host", CONFIG.hostname, sizeof(CONFIG.hostname))) {
             return;  // error already sent
         }
         saveConfig();  // save immediately
