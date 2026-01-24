@@ -5,12 +5,12 @@
 #include <ESP8266mDNS.h>
 #include <ErriezCRC32.h>
 
+#include "Logger.h"
 #include "ota_public_key.h"
-
 #define VIRTUAL_PIR 4
 
 static constexpr uint32_t CONFIG_MAGIC = 0x5049524C;  // "PIRL"
-static constexpr uint16_t CONFIG_VERSION = 1;
+static constexpr uint16_t CONFIG_VERSION = 2;
 
 Config g_config;  // Externally visible config instance.
 
@@ -39,8 +39,11 @@ void setConfigDefaults() {
 
     for (size_t i = 0; i < g_config.ledConfig.size(); i++) {
         uint8_t pirMask = (1 << i) | (1 << (i + VIRTUAL_PIR));
-        g_config.ledConfig[i] = {
-            .brightness = 1023, .onTimeMs = 10000, .fadeFreq = 0.3f, .pirMask = pirMask};
+        g_config.ledConfig[i] = {.brightness = 1023,
+                                 .rampOnMs = 1000,
+                                 .holdOnMs = 10000,
+                                 .rampOffMs = 1000,
+                                 .pirMask = pirMask};
     }
 
     g_config.crc = computeCrc(g_config);
@@ -88,16 +91,11 @@ ConfigServer::ConfigServer(const char* serviceName) : m_server(80), m_serviceNam
         m_server.send(204);  // No Content
     };
 
-    m_server.on("/save", HTTP_POST, [&]() {
-        m_saveRequested = true;
-        m_lastRequestTime = millis();
-
-        addCors(m_server);
-        m_server.send(200);
-    });
-    m_server.on("/save", HTTP_OPTIONS, handleOptions);
-
     m_server.on("/save_debounce", HTTP_POST, [&]() {
+        if (!m_server.hasArg("val")) {
+            m_server.send(400, "text/html", "Missing parameter");
+            return;
+        }
         m_saveDebounceTimeMs = m_server.arg("val").toInt();
         addCors(m_server);
         m_server.send(200);
@@ -113,13 +111,15 @@ ConfigServer::ConfigServer(const char* serviceName) : m_server(80), m_serviceNam
         json += "\"saves\":" + String(m_configSaves) + ",";
         json += "\"storedValid\":" + String(m_storedConfigValid ? "true" : "false") + ",";
         json += "\"hostname\":\"" + String(g_config.hostname) + "\",";
+        json += "\"timestamp\":" + String(g_config.timestamp) + ",";
         json += "\"ledConfig\":[";
         for (size_t i = 0; i < g_config.ledConfig.size(); i++) {
             if (i > 0) json += ",";
             json += "{";
             json += "\"brightness\":" + String(g_config.ledConfig[i].brightness) + ",";
-            json += "\"onTimeMs\":" + String(g_config.ledConfig[i].onTimeMs) + ",";
-            json += "\"fadeFreq\":" + String(g_config.ledConfig[i].fadeFreq, 3) + ",";
+            json += "\"rampOnMs\":" + String(g_config.ledConfig[i].rampOnMs) + ",";
+            json += "\"holdOnMs\":" + String(g_config.ledConfig[i].holdOnMs) + ",";
+            json += "\"rampOffMs\":" + String(g_config.ledConfig[i].rampOffMs) + ",";
             json += "\"pirMask\":" + String(g_config.ledConfig[i].pirMask);
             json += "}";
         }
@@ -161,11 +161,14 @@ ConfigServer::ConfigServer(const char* serviceName) : m_server(80), m_serviceNam
             g_config.ledConfig[i].brightness =
                 max(min((int)m_server.arg("brightness").toInt(), 1023), 0);
         }
-        if (m_server.hasArg("onTimeMs")) {
-            g_config.ledConfig[i].onTimeMs = m_server.arg("onTimeMs").toInt();
+        if (m_server.hasArg("rampOnMs")) {
+            g_config.ledConfig[i].rampOnMs = m_server.arg("rampOnMs").toInt();
         }
-        if (m_server.hasArg("fadeFreq")) {
-            g_config.ledConfig[i].fadeFreq = max(m_server.arg("fadeFreq").toFloat(), 0.0f);
+        if (m_server.hasArg("holdOnMs")) {
+            g_config.ledConfig[i].holdOnMs = max(m_server.arg("holdOnMs").toFloat(), 0.0f);
+        }
+        if (m_server.hasArg("rampOffMs")) {
+            g_config.ledConfig[i].rampOffMs = m_server.arg("rampOffMs").toInt();
         }
         if (m_server.hasArg("pirMask")) {
             g_config.ledConfig[i].pirMask = static_cast<uint8_t>(m_server.arg("pirMask").toInt());
@@ -176,6 +179,11 @@ ConfigServer::ConfigServer(const char* serviceName) : m_server(80), m_serviceNam
     m_server.on("/config/led", HTTP_OPTIONS, handleOptions);
 
     m_server.on("/config/save", HTTP_POST, [&]() {
+        if (!m_server.hasArg("timestamp")) {
+            m_server.send(400, "text/html", "Missing timestamp parameter");
+            return;
+        }
+        g_config.timestamp = strtoll(m_server.arg("timestamp").c_str(), nullptr, 10);
         m_lastRequestTime = millis();
         m_saveRequested = true;
 
@@ -203,11 +211,17 @@ ConfigServer::ConfigServer(const char* serviceName) : m_server(80), m_serviceNam
 
     m_server.on("/status", HTTP_GET, [&]() {
         String json = "{";
-        json += "\"pir\":" + String(m_pirStates) + ",";
+        json += "\"pir\":" + (m_pirStatesPtr ? String(*m_pirStatesPtr) : "null") + ",";
+
         json += "\"leds\":[";
-        for (size_t i = 0; i < m_ledStates.size(); i++) {
+        for (size_t i = 0; i < m_ledStatesPtrs.size(); i++) {
             if (i > 0) json += ",";
-            json += String(m_ledStates[i]);
+            json += "{";
+            json +=
+                "\"state\":" + (m_ledStatesPtrs[i] ? String(*m_ledStatesPtrs[i]) : "null") + ",";
+            json +=
+                "\"brightness\":" + (m_brightnessPtrs[i] ? String(*m_brightnessPtrs[i]) : "null");
+            json += "}";
         }
         json += "]";
         json += "}";
@@ -215,6 +229,26 @@ ConfigServer::ConfigServer(const char* serviceName) : m_server(80), m_serviceNam
         m_server.send(200, "application/json", json);
     });
     m_server.on("/status", HTTP_OPTIONS, handleOptions);
+
+    m_server.on("/reboot", HTTP_POST, [&]() {
+        addCors(m_server);
+        m_server.send(200);
+        ESP.restart();
+    });
+    m_server.on("/reboot", HTTP_OPTIONS, handleOptions);
+
+    m_server.on("/logs", HTTP_GET, [&]() {
+        m_server.setContentLength(CONTENT_LENGTH_UNKNOWN);
+        addCors(m_server);
+        m_server.send(200, "text/plain", "");
+        if (logWrapped) {
+            m_server.sendContent(logBuf + logPos, sizeof(logBuf) - logPos);
+            m_server.sendContent(logBuf, logPos);
+        } else {
+            m_server.sendContent(logBuf, logPos);
+        }
+    });
+    m_server.on("/logs", HTTP_OPTIONS, handleOptions);
 }
 
 void ConfigServer::begin() {

@@ -1,36 +1,28 @@
 #pragma once
-
+#include <Arduino.h>
 #include <stdint.h>
 
 class Led {
    public:
-    enum class Mode { OFF, FADE, BLINK, FADE_ON, FADE_OFF };
+    Led(uint8_t pin, bool inv = false) : m_ledPin(pin), m_inv(inv) {}
 
-    Led(uint8_t pin, bool inv, const float& freq, const int& maxValue)
-        : m_ledPin(pin), m_inv(inv), m_freq(freq), m_ledMax(maxValue) {}
-
-    void setup();
+    void setup() {
+        pinMode(m_ledPin, OUTPUT);
+        analogWrite(m_ledPin, 0);
+    }
 
     void update(unsigned long now);
 
-    void setMode(Mode mode) {
-        m_mode = mode;
-        m_lastUpdate = 0;
-    };
-    Mode getMode() const { return m_mode; }
+    void setTarget(int16_t* brightness, int16_t* slew_ms, unsigned long now);
+
+    const int16_t* getBrightnessPtr() const { return &m_brightness; }
 
    private:
-    void applyOutput();
-
-    uint8_t m_ledPin;
+    const uint8_t m_ledPin;
     bool m_inv;
-    const float& m_freq;  // TODO: refactor this...want different on/off ramp times.
-    const int& m_ledMax;
-
-    int m_fadeDirection = 1;
+    int16_t* m_slew_msPtr = nullptr;
 
     unsigned long m_lastUpdate = 0;
-    int m_lastWritten = 0;
-    Mode m_mode = Mode::OFF;
-    int m_brightness = 0;
+    int16_t m_brightness = 0;
+    int16_t* m_brightnessTargetPtr = nullptr;
 };

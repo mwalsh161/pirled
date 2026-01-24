@@ -8,3 +8,5 @@
 
 *.pem
 include/ota_public_key.h
+pirled-backups/
+fp-info-cache

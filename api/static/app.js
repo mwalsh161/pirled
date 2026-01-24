@@ -4,6 +4,12 @@ let refreshIntervalId = null; // holds the interval ID
 const REFRESH_PERIOD_MS = 5000; // default: 5 seconds
 
 // ---------- Utilities ----------
+async function fetchTxt(url) {
+    const r = await fetch(url);
+    if (!r.ok) throw new Error(url);
+    return r.text();
+}
+
 async function fetchJSON(url) {
     const r = await fetch(url);
     if (!r.ok) throw new Error(url);
@@ -49,7 +55,8 @@ function renderStatus(status) {
     }
     let ledMapped = [];
     for (let i = 0; i < 4; i++) {
-        ledMapped.push(STATE_MAP[status.leds[i]] ?? `UNKNOWN (${v})`)
+        const led_state = STATE_MAP[status.leds[i].state] ?? `UNKNOWN (${status.leds[i].state})`;
+        ledMapped.push(`${led_state} (${status.leds[i].brightness})`)
     }
     rows.push(`<tr><td>leds</td><td>${ledMapped.join(", ")}</td></tr>`);
 
@@ -88,15 +95,22 @@ function renderLedConfig(dev, config) {
 
         <label>
           <div class="flash-wrapper">
-            On Time (ms)
-            <input type="number" value="${led.onTimeMs}" min="0" data-led="${i}" data-field="onTimeMs">
+            Ramp On Time (ms)
+            <input type="number" step="1000" value="${led.rampOnMs}" min="0" data-led="${i}" data-field="rampOnMs">
           </div>
         </label><br>
 
         <label>
           <div class="flash-wrapper">
-            Fade Freq
-            <input type="number" step="0.1" value="${led.fadeFreq}" min="0" data-led="${i}" data-field="fadeFreq">
+            Stay On Time (ms)
+            <input type="number" step="1000" value="${led.holdOnMs}" min="0" data-led="${i}" data-field="holdOnMs">
+          </div>
+        </label><br>
+
+        <label>
+          <div class="flash-wrapper">
+            Ramp Off Time (ms)
+            <input type="number" step="1000" value="${led.rampOffMs}" min="0" data-led="${i}" data-field="rampOffMs">
           </div>
         </label><br>
 
@@ -150,11 +164,13 @@ async function load() {
         const status = await fetchJSON(deviceURL(dev, "/status"));
         const pirOverride = await fetchJSON(deviceURL(dev, "/pir_override"));
         const saveDebounce = await fetchJSON(deviceURL(dev, "/save_debounce"));
+        const logs = await fetchTxt(deviceURL(dev, "/logs"))
 
         const now = new Date().toLocaleTimeString();
 
         app.innerHTML = `
             <p>${dev.name} (${dev.host}:${dev.port})</p>
+            <p>Persisted config from ${(new Date(config.timestamp * 1000)).toLocaleString()}</p>
             <button id="refreshBtn">Refresh</button>
             <label>
                 <input type="checkbox" id="autoRefresh"> Auto-refresh every ${REFRESH_PERIOD_MS / 1000}s
@@ -171,6 +187,8 @@ async function load() {
             ${renderLedConfig(dev, config)}
             <h3>PIR Override</h3>
             ${renderPirOverride(dev, pirOverride)}
+            <h3>Logs</h3>
+            <div class="logs">${logs}</div>
         `;
 
         document.getElementById("refreshBtn").onclick = refresh;
@@ -191,7 +209,7 @@ async function load() {
         // Save button
         document.getElementById("saveBtn").onclick = async () => {
             try {
-                await postForm(deviceURL(dev, "/save"), {});
+                await postForm(deviceURL(dev, "/config/save"), {"timestamp": Math.floor(Date.now() / 1000)});
                 flash(document.getElementById("saveBtn"), true);
             } catch {
                 flash(document.getElementById("saveBtn"), false);
@@ -227,7 +245,7 @@ async function load() {
                 const valueBefore = el.type === "checkbox" ? el.checked : el.value;
 
                 try {
-                    if (el.dataset.field === "brightness" || el.dataset.field === "onTimeMs" || el.dataset.field === "fadeFreq") {
+                    if (el.dataset.field === "brightness" || el.dataset.field === "rampOnMs"|| el.dataset.field === "holdOnMs"|| el.dataset.field === "rampOffMs") {
                         await updateLed(el);
                     } else if (el.dataset.field === "pir_override") {
                         const bits = Array.from(app.querySelectorAll('input[data-field="pir_override"]'))

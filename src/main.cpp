@@ -6,19 +6,18 @@
 
 #include "Led.h"
 #include "PortalServer.h"
+#include "debug.h"
 
 #define WIFI_TIMEOUT_MS 10000
-
-float statusFadeFreq = 2.0f;
-Led statusLed{D4, true, statusFadeFreq, 1023};  // todo this value is important when inv.
 
 struct ControllerConfig {
     Controller controller;
     const uint8_t& pirMask;
 };
 
-ControllerConfig makeController(uint8_t pin, const LedConfig& ledCfg) {
-    return {{{pin, false, ledCfg.fadeFreq, ledCfg.brightness}, ledCfg.onTimeMs}, ledCfg.pirMask};
+ControllerConfig makeController(uint8_t pin, LedConfig& ledCfg) {
+    return {{pin, ledCfg.brightness, ledCfg.rampOnMs, ledCfg.holdOnMs, ledCfg.rampOffMs},
+            ledCfg.pirMask};
 }
 
 std::array<ControllerConfig, 4> configs = {{
@@ -28,18 +27,15 @@ std::array<ControllerConfig, 4> configs = {{
     makeController(D3, g_config.ledConfig[3]),
 }};
 std::array<uint8_t, 4> pirPins{D6, D7, D2, D5};
+PirStates pirStates = 0;
 
-ConfigServer configServer{"pirled-controller"};
+ConfigServer configServer{"pirled-controller"};  // TODO: use mac addr to make unique
 
 /* ---------------- Arduino ---------------- */
 
 bool waitForWiFi() {
     auto start = millis();
-    while (WiFi.status() != WL_CONNECTED) {
-        auto now = millis();
-        statusLed.update(now);
-
-        if (now - start >= WIFI_TIMEOUT_MS) break;
+    while (WiFi.status() != WL_CONNECTED && millis() - start < WIFI_TIMEOUT_MS) {
         delay(10);
     }
     return WiFi.status() == WL_CONNECTED;  // I've seen this report not connected again...
@@ -50,27 +46,29 @@ bool tryConnectStoredWiFi() {
 
     WiFi.setHostname(g_config.hostname);
     WiFi.begin(g_config.wifiSsid, g_config.wifiPassword);
-    statusLed.setMode(Led::Mode::BLINK);
 
     return waitForWiFi();
 }
 
 void runPortalBlocking() {
-    statusLed.setMode(Led::Mode::FADE);
-
     PortalServer server;
+    for (int i = 0; i < 4; i++) {
+        analogWrite(D4, 1023);
+        delay(100);
+        analogWrite(D4, 0);
+        delay(100);
+    }
     while (true) {
-        statusLed.update(millis());
         server.handle();  // Eventually will restart ESP.
     }
 }
 
 void setup() {
-    Serial.begin(115200);
-    statusLed.setup();
+    D_BEGIN(9600);
 
     WiFi.mode(WIFI_STA);
-    WiFi.persistent(false);  // We manage in config separately.
+    WiFi.persistent(false);     // We manage in config separately.
+    analogWriteResolution(10);  // For Leds.
 
     if (!tryConnectStoredWiFi()) {
         runPortalBlocking();
@@ -83,29 +81,31 @@ void setup() {
         config.controller.setup();
     }
 
+    // WiFi.macAddress().replace(":", "");
     configServer.begin();
-    statusLed.setMode(Led::Mode::OFF);
-    statusLed.update(millis());
+
+    // Link states for reporting.
+    std::array<const int16_t*, 4> brightnessPtrs = {};
+    std::array<const uint8_t*, 4> statePtrs = {};
+    for (size_t i = 0; i < configs.size(); i++) {
+        brightnessPtrs[i] = configs[i].controller.getBrightnessPtr();
+        statePtrs[i] = reinterpret_cast<const uint8_t*>(configs[i].controller.getStatePtr());
+    }
+    configServer.linkState(&pirStates, statePtrs, brightnessPtrs);
 }
 
 void loop() {
-    PirStates pirStates = 0;
     auto now = millis();
 
-    // Consider setting LED state to quickly example config change.
     configServer.handle(now);
 
+    pirStates = 0;
     for (size_t i = 0; i < pirPins.size(); i++) {
         pirStates |= (digitalRead(pirPins[i]) == HIGH) << i;
     }
-
     pirStates |= configServer.getPirOverrides();
 
-    std::array<uint8_t, configs.size()> ledStates;
     for (size_t i = 0; i < configs.size(); i++) {
         configs[i].controller.update(now, pirStates & configs[i].pirMask);
-        ledStates[i] = static_cast<uint8_t>(configs[i].controller.getState());
     }
-
-    configServer.setState(pirStates, ledStates);
 }

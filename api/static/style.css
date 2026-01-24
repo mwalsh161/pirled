@@ -199,3 +199,6 @@ input[type="checkbox"]:hover {
     font-weight: 500;
 }
 
+.logs {
+    white-space: pre-wrap;
+}
