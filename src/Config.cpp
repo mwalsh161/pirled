@@ -6,6 +6,7 @@
 #include <ErriezCRC32.h>
 
 #include "Logger.h"
+#include "WireProtocol.h"
 #include "ota_public_key.h"
 #define VIRTUAL_PIR 4
 
@@ -106,31 +107,6 @@ ConfigServer::ConfigServer(const char* serviceName) : m_server(80), m_serviceNam
     });
     m_server.on("/save_debounce", HTTP_OPTIONS, handleOptions);
 
-    m_server.on("/config", HTTP_GET, [&]() {
-        String json = "{";
-        json += "\"saves\":" + String(m_configSaves) + ",";
-        json += "\"storedValid\":" + String(m_storedConfigValid ? "true" : "false") + ",";
-        json += "\"hostname\":\"" + String(CONFIG.hostname) + "\",";
-        json += "\"timestamp\":" + String(CONFIG.timestamp) + ",";
-        json += "\"ledConfig\":[";
-        for (size_t i = 0; i < CONFIG.ledConfig.size(); i++) {
-            if (i > 0) json += ",";
-            json += "{";
-            json += "\"brightness\":" + String(CONFIG.ledConfig[i].brightness) + ",";
-            json += "\"rampOnMs\":" + String(CONFIG.ledConfig[i].rampOnMs) + ",";
-            json += "\"holdOnMs\":" + String(CONFIG.ledConfig[i].holdOnMs) + ",";
-            json += "\"rampOffMs\":" + String(CONFIG.ledConfig[i].rampOffMs) + ",";
-            json += "\"pirMask\":" + String(CONFIG.ledConfig[i].pirMask);
-            json += "}";
-        }
-        json += "]";
-        json += "}";
-
-        addCors(m_server);
-        m_server.send(200, "application/json", json);
-    });
-    m_server.on("/config", HTTP_OPTIONS, handleOptions);
-
     m_server.on("/config/network", HTTP_POST, [&]() {
         if (m_server.hasArg("hostname")) {
             cpstr(CONFIG.hostname, m_server.arg("hostname").c_str(), sizeof(CONFIG.hostname));
@@ -174,7 +150,7 @@ ConfigServer::ConfigServer(const char* serviceName) : m_server(80), m_serviceNam
             CONFIG.ledConfig[i].pirMask = static_cast<uint8_t>(m_server.arg("pirMask").toInt());
         }
         m_lastRequestTime = millis();
-        m_server.send(200);
+        m_server.send(200);  // TODO return this LEDs brightness
     });
     m_server.on("/config/led", HTTP_OPTIONS, handleOptions);
 
@@ -203,32 +179,18 @@ ConfigServer::ConfigServer(const char* serviceName) : m_server(80), m_serviceNam
         m_pirOverrides = static_cast<PirStates>(m_server.arg("val").toInt());
         m_server.send(200);
     });
-    m_server.on("/pir_override", HTTP_GET, [&]() {
-        addCors(m_server);
-        m_server.send(200, "application/json", String(m_pirOverrides));
-    });
     m_server.on("/pir_override", HTTP_OPTIONS, handleOptions);
 
-    m_server.on("/status", HTTP_GET, [&]() {
-        String json = "{";
-        json += "\"pir\":" + (m_pirStatesPtr ? String(*m_pirStatesPtr) : "null") + ",";
-
-        json += "\"leds\":[";
-        for (size_t i = 0; i < m_ledStatesPtrs.size(); i++) {
-            if (i > 0) json += ",";
-            json += "{";
-            json +=
-                "\"state\":" + (m_ledStatesPtrs[i] ? String(*m_ledStatesPtrs[i]) : "null") + ",";
-            json +=
-                "\"brightness\":" + (m_brightnessPtrs[i] ? String(*m_brightnessPtrs[i]) : "null");
-            json += "}";
-        }
-        json += "]";
-        json += "}";
+    m_server.on("/combined.schema", HTTP_GET, [&]() {
         addCors(m_server);
-        m_server.send(200, "application/json", json);
+        sendWireSchema(m_server);
     });
-    m_server.on("/status", HTTP_OPTIONS, handleOptions);
+    m_server.on("/combined.schema", HTTP_OPTIONS, handleOptions);
+    m_server.on("/combined.bin", HTTP_GET, [&]() {
+        addCors(m_server);
+        sendWireData(m_server);
+    });
+    m_server.on("/combined.bin", HTTP_OPTIONS, handleOptions);
 
     m_server.on("/reboot", HTTP_POST, [&]() {
         addCors(m_server);

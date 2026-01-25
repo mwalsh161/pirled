@@ -1,12 +1,11 @@
 #include <AppState.h>
 #include <pins.h>
 
-ControllerConfig makeController(uint8_t pin, LedConfig& ledCfg) {
-    return {{pin, ledCfg.brightness, ledCfg.rampOnMs, ledCfg.holdOnMs, ledCfg.rampOffMs},
-            ledCfg.pirMask};
+Controller makeController(uint8_t pin, LedConfig& ledCfg) {
+    return {pin, ledCfg.brightness, ledCfg.rampOnMs, ledCfg.holdOnMs, ledCfg.rampOffMs};
 }
 
-std::array<ControllerConfig, 4> LEDS = {{
+std::array<Controller, 4> LEDS = {{
     makeController(D4, CONFIG.ledConfig[0]),  // oof D4...epileptic on reset.
     makeController(D8, CONFIG.ledConfig[1]),
     makeController(D1, CONFIG.ledConfig[2]),

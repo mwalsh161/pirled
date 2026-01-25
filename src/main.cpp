@@ -10,7 +10,7 @@
 bool waitForWiFi() {
     auto start = millis();
     while (WiFi.status() != WL_CONNECTED && millis() - start < 10000) {
-        delay(10);
+        yield();
     }
     return WiFi.status() == WL_CONNECTED;  // I've seen this report not connected again...
 }
@@ -51,20 +51,11 @@ void setup() {
     for (const auto& pin : PIR_PINS) {
         pinMode(pin, INPUT);
     }
-    for (auto& config : LEDS) {
-        config.controller.setup();
+    for (auto& ledController : LEDS) {
+        ledController.setup();
     }
 
     CONFIG_SERVER.begin();
-
-    // Link states for reporting.
-    std::array<const int16_t*, 4> brightnessPtrs = {};
-    std::array<const uint8_t*, 4> statePtrs = {};
-    for (size_t i = 0; i < LEDS.size(); i++) {
-        brightnessPtrs[i] = LEDS[i].controller.getBrightnessPtr();
-        statePtrs[i] = reinterpret_cast<const uint8_t*>(LEDS[i].controller.getStatePtr());
-    }
-    CONFIG_SERVER.linkState(&PIR_STATES, statePtrs, brightnessPtrs);
 }
 
 void loop() {
@@ -76,9 +67,9 @@ void loop() {
     for (size_t i = 0; i < PIR_PINS.size(); i++) {
         PIR_STATES |= (digitalRead(PIR_PINS[i]) == HIGH) << i;
     }
-    PIR_STATES |= CONFIG_SERVER.getPirOverrides();
+    PIR_STATES |= CONFIG_SERVER.m_pirOverrides;
 
     for (size_t i = 0; i < LEDS.size(); i++) {
-        LEDS[i].controller.update(now, PIR_STATES & LEDS[i].pirMask);
+        LEDS[i].update(now, PIR_STATES & CONFIG.ledConfig[i].pirMask);
     }
 }

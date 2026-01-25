@@ -26,6 +26,46 @@ function deviceURL(dev, path) {
     return `http://${dev.host}:${dev.port}${path}`;
 }
 
+function cmpBuff(a, b){
+    return a.byteLength==b.byteLength && new Uint8Array(a).every((v,i)=>v===new Uint8Array(b)[i])
+}
+
+async function fetchRaw(schema, url) {
+    const r = await fetch(url);
+    if (!r.ok) throw new Error(url);
+    const raw = await r.arrayBuffer();
+    const dat = processSchema(schema, new DataView(raw), 0).dat
+    return {dat, raw};
+}
+
+const littleEndian = true;
+function processSchema(schema, buff, offset) {
+    let dat = {};
+    for (const field of schema) {
+        let obj;
+        if (field.arrayLen > 0) {
+            obj = [];
+            for (let i = 0; i < field.arrayLen; i ++ ){
+                const subobj = processSchema(field.sub, buff, offset);
+                offset = subobj.offset;
+                obj.push(subobj.dat)
+            }
+        } else {
+            switch (field.type + field.size * 8) {
+                case "uint8": obj = buff.getUint8(offset); break;
+                case "uint16": obj = buff.getUint16(offset, littleEndian); break;
+                case "int16": obj = buff.getInt16(offset, littleEndian); break;
+                case "int32": obj = buff.getInt32(offset, littleEndian); break;
+                case "int64": obj = Number(buff.getBigInt64(offset, littleEndian)); break;
+                default: obj = null; break;
+            }
+            offset += field.size;
+        }
+        dat[field.name] = obj;
+    }
+    return {dat, offset};
+}
+
 // ---------- Flash animation ----------
 function flash(el, success = true) {
     const target = el.closest(".flash-wrapper") || el;
@@ -117,42 +157,36 @@ function renderPirOverrideSkeleton(pirCount) {
 }
 
 // ---------- Value update pass ----------
-function updateLedValues(config, status) {
-    for (let i = 0; i < config.ledConfig.length; i++) {
-        const led = config.ledConfig[i];
-        const fieldset = app.querySelector(`fieldset[data-led-index="${i}"]`);
-        if (!fieldset) continue;
+function updateLedValues(fieldset, ledConf, ledState) {
+    // Numeric inputs from config
+    ['brightness', 'rampOnMs', 'holdOnMs', 'rampOffMs'].forEach(field => {
+        const el = fieldset.querySelector(`[data-field="${field}"]`);
+        if (document.activeElement !== el) el.value = ledConf[field];
+    });
 
-        // Numeric inputs from config
-        ['brightness', 'rampOnMs', 'holdOnMs', 'rampOffMs'].forEach(field => {
-            const el = fieldset.querySelector(`[data-field="${field}"]`);
-            if (el) el.value = led[field];
-        });
+    // CSS var for live brightness from status
+    const brightnessInput = fieldset.querySelector('[data-field="brightness"]');
+    if (brightnessInput) brightnessInput.style.setProperty('--live', ledState.brightness);
 
-        // CSS var for live brightness from status
-        const brightnessInput = fieldset.querySelector('[data-field="brightness"]');
-        if (brightnessInput) brightnessInput.style.setProperty('--live', status.leds[i].brightness);
+    // LED state label from status
+    const stateText = STATE_MAP[ledState.state] ?? 'UNKNOWN';
+    const stateLabel = fieldset.querySelector('.led-state');
+    if (stateLabel) stateLabel.textContent = stateText;
 
-        // LED state label from status
-        const stateText = STATE_MAP[status.leds[i].state] ?? 'UNKNOWN';
-        const stateLabel = fieldset.querySelector('.led-state');
-        if (stateLabel) stateLabel.textContent = stateText;
-
-        // Update PIR mask checkboxes (config)
-        fieldset.querySelectorAll('.pir-mask input[type="checkbox"]').forEach(cb => {
-            const bit = Number(cb.dataset.bit);
-            cb.checked = !!(led.pirMask & (1 << bit));
-        });
-    }
+    // Update PIR mask checkboxes (config)
+    fieldset.querySelectorAll('.pir-mask input[type="checkbox"]').forEach(cb => {
+        const bit = Number(cb.dataset.bit);
+        cb.checked = !!(ledConf.pirMask & (1 << bit));
+    });
 }
 
-function updatePirOverride(pirOverride, status) {
-    const val = pirOverride.val ?? 0;
+function updatePirOverride(pirOverride, pirState) {
+    const val = pirOverride ?? 0;
     const checkboxes = app.querySelectorAll('.pir-override input[type="checkbox"]');
     checkboxes.forEach(cb => {
         const bit = Number(cb.dataset.bit);
         cb.checked = Boolean(val & (1 << bit));
-        cb.classList.toggle('pir-active', Boolean(status.pir & (1 << bit)));
+        cb.classList.toggle('pir-active', Boolean(pirState & (1 << bit)));
     });
 }
 
@@ -167,9 +201,7 @@ async function load() {
     const dev = devices[0];
 
     app.innerHTML = `
-        <p>${dev.name} (${dev.host}:${dev.port})</p>
-        <button id="refreshBtn">Refresh</button>
-        
+        <small>${dev.name} (${dev.host}:${dev.port})</small>        
         <h3>LED Configuration</h3>
         <div id="ledContainer">${renderLedSkeleton(4, 8)}</div>
         
@@ -223,20 +255,29 @@ async function load() {
     }
 
     // ---------- Refresh ----------
-    async function refresh() {
-        const config = await fetchJSON(deviceURL(dev, "/config"));
-        const status = await fetchJSON(deviceURL(dev, "/status"));
-        const pirOverride = await fetchJSON(deviceURL(dev, "/pir_override"));
-        const saveDebounce = await fetchJSON(deviceURL(dev, "/save_debounce"));
+    const schema = await fetchJSON(deviceURL(dev, "/combined.schema"));
+    const saveDebounce = await fetchJSON(deviceURL(dev, "/save_debounce"));
+    document.getElementById("debounce").value = saveDebounce;
 
+    let lastMsg = null; // Used to detect changes.
+
+    async function refresh() {
+        const currentMsg = await fetchRaw(schema, deviceURL(dev, "/combined.bin"));
+        const combined = currentMsg.dat;
+        const changed = lastMsg ? !cmpBuff(lastMsg.raw, currentMsg.raw) : true;
+        lastMsg = currentMsg;
 
         // Update all dynamic values
-        updateLedValues(config, status);
-        updatePirOverride(pirOverride, status);
+        for (let i = 0; i < 4; i ++){
+            const fieldset = app.querySelector(`fieldset[data-led-index="${i}"]`);
+            updateLedValues(fieldset, combined.ledConfigs[i], combined.ledStates[i]);
+        }
+        updatePirOverride(combined.pirOverride, combined.pirState);
 
-        document.getElementById("debounce").value = saveDebounce;
         document.getElementById("lastUpdate").textContent = `Last update: ${new Date().toLocaleTimeString()}`;
-        document.getElementById("configSaved").textContent = `Config saved: ${new Date(config.timestamp * 1000).toLocaleString()}`;
+        document.getElementById("configSaved").textContent = `Config saved: ${new Date(combined.timestamp * 1000).toLocaleString()}`;
+
+        setTimeout(refresh, changed ? 10 : 500)
     }
 
     // Logs refresh
@@ -266,13 +307,9 @@ async function load() {
         inp.addEventListener('change', () => updatePirOverrideField(inp));
     });
 
-    document.getElementById("refreshBtn").onclick = refresh;
     document.getElementById("refreshLogs").onclick = refreshLogs;
 
-    // TODO: Different intervals to speed up; brightness should be fast if currently changing.
-    setInterval(() => {
-        refresh().catch(err => console.error("Auto-refresh failed:", err));
-    }, 1000);
+    refresh();
 }
 
 load();

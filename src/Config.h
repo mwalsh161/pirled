@@ -35,24 +35,14 @@ bool saveConfig();  // Use with care to avoid eeprom wear.
 
 class ConfigServer {
    public:
+    PirStates m_pirOverrides = 0;
+
     ConfigServer(const char* serviceName);
 
     void begin();
 
     ~ConfigServer() { m_server.stop(); }
     void handle(unsigned long now);
-
-    PirStates getPirOverrides() { return m_pirOverrides; }
-
-    void linkState(const PirStates* pirStatesPtr, std::array<const uint8_t*, 4> ledStatesPtr,
-                   std::array<const int16_t*, 4> brightnessPtrs) {
-        // Link states for reporting.
-        // Note: called from main loop, no concurrency issues expected.
-        m_pirStatesPtr = pirStatesPtr;
-
-        m_ledStatesPtrs = ledStatesPtr;
-        m_brightnessPtrs = brightnessPtrs;
-    }
 
    private:
     ESP8266WebServer m_server;
@@ -67,6 +57,4 @@ class ConfigServer {
     const PirStates* m_pirStatesPtr = nullptr;
     std::array<const uint8_t*, 4> m_ledStatesPtrs = {nullptr, nullptr, nullptr, nullptr};
     std::array<const int16_t*, 4> m_brightnessPtrs = {nullptr, nullptr, nullptr, nullptr};
-
-    PirStates m_pirOverrides = 0;
 };
