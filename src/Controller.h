@@ -6,7 +6,7 @@
 
 class Controller {
    public:
-    enum class State { OFF, ON, WAITING_OFF };
+    enum class State : uint8_t { OFF, ON, WAITING_OFF };
     Led m_led;
     State m_state = State::OFF;
 

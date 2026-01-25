@@ -34,7 +34,8 @@ async function fetchRaw(schema, url) {
     const r = await fetch(url);
     if (!r.ok) throw new Error(url);
     const raw = await r.arrayBuffer();
-    const dat = processSchema(schema, new DataView(raw), 0).dat
+    const {dat, offset} = processSchema(schema, new DataView(raw), 0)
+    if (offset != raw.byteLength) throw new Error(`Schema doesn't match payload`)
     return {dat, raw};
 }
 

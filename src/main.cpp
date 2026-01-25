@@ -9,7 +9,7 @@
 
 bool waitForWiFi() {
     auto start = millis();
-    while (WiFi.status() != WL_CONNECTED && millis() - start < 10000) {
+    while (WiFi.status() != WL_CONNECTED && millis() - start < 30000) {
         yield();
     }
     return WiFi.status() == WL_CONNECTED;  // I've seen this report not connected again...
