@@ -70,6 +70,6 @@ void loop() {
     PIR_STATES |= CONFIG_SERVER.m_pirOverrides;
 
     for (size_t i = 0; i < LEDS.size(); i++) {
-        LEDS[i].update(now, PIR_STATES & CONFIG.ledConfig[i].pirMask);
+        LEDS[i].update(now, PIR_STATES);
     }
 }

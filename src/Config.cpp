@@ -45,7 +45,8 @@ void setConfigDefaults() {
                                .holdOnMs = 10000,
                                .rampOffMs = 1000,
                                .waitOnMs = 0,
-                               .pirMask = pirMask};
+                               .pirMaskOn = pirMask,
+                               .pirMaskOff = pirMask};
     }
 
     CONFIG.crc = computeCrc(CONFIG);
@@ -150,8 +151,12 @@ ConfigServer::ConfigServer(const char* serviceName) : m_server(80), m_serviceNam
         if (m_server.hasArg("waitOnMs")) {
             CONFIG.ledConfig[i].waitOnMs = max(m_server.arg("waitOnMs").toFloat(), 0.0f);
         }
-        if (m_server.hasArg("pirMask")) {
-            CONFIG.ledConfig[i].pirMask = static_cast<uint8_t>(m_server.arg("pirMask").toInt());
+        if (m_server.hasArg("pirMaskOn")) {
+            CONFIG.ledConfig[i].pirMaskOn = static_cast<uint8_t>(m_server.arg("pirMaskOn").toInt());
+        }
+        if (m_server.hasArg("pirMaskOff")) {
+            CONFIG.ledConfig[i].pirMaskOff =
+                static_cast<uint8_t>(m_server.arg("pirMaskOff").toInt());
         }
         m_lastRequestTime = millis();
         m_server.send(200);  // TODO return this LEDs brightness

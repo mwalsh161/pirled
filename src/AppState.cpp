@@ -7,7 +7,9 @@ Controller makeController(uint8_t pin, LedConfig& ledCfg) {
             ledCfg.rampOnMs,
             ledCfg.holdOnMs,
             ledCfg.rampOffMs,
-            ledCfg.waitOnMs};
+            ledCfg.waitOnMs,
+            ledCfg.pirMaskOn,
+            ledCfg.pirMaskOff};
 }
 
 std::array<Controller, 4> LEDS = {{

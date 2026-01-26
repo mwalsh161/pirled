@@ -79,17 +79,27 @@ function flash(el, success = true) {
 // ---------- Render helpers ----------
 const STATE_MAP = {
     0: "OFF",
-    1: "ON",
-    2: "WAITING_OFF"
+    1: "WAITING_ON",
+    2: "ON",
+    3: "WAITING_OFF"
 };
 
 // Skeleton for LEDs
 function renderLedSkeleton(ledCount, pirCount) {
     const leds = Array.from({ length: ledCount }).map((_, i) => {
-        const pirCheckboxes = Array(pirCount).fill(0).map((_, j) => `
+        const onCheckboxes = Array(pirCount).fill(0).map((_, j) => `
             <label>
                 <div class="flash-wrapper">
-                    <input type="checkbox" data-led="${i}" data-bit="${j}">
+                    <input type="checkbox" data-led="${i}" data-bit="${j}" data-mask="on">
+                    ${j < 4 ? `PIR ${j}` : `Virtual ${j-4}`}
+                </div>
+            </label>
+        `).join("<br>");
+
+        const offCheckboxes = Array(pirCount).fill(0).map((_, j) => `
+            <label>
+                <div class="flash-wrapper">
+                    <input type="checkbox" data-led="${i}" data-bit="${j}" data-mask="off">
                     ${j < 4 ? `PIR ${j}` : `Virtual ${j-4}`}
                 </div>
             </label>
@@ -141,7 +151,16 @@ function renderLedSkeleton(ledCount, pirCount) {
 
                 <fieldset class="pir-mask">
                     <legend>PIR Mask</legend>
-                    ${pirCheckboxes}
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                        <div>
+                            <strong>On</strong><br>
+                            ${onCheckboxes}
+                        </div>
+                        <div>
+                            <strong>Off</strong><br>
+                            ${offCheckboxes}
+                        </div>
+                    </div>
                 </fieldset>
             </fieldset>
         `;
@@ -182,9 +201,13 @@ function updateLedValues(fieldset, ledConf, ledState) {
     if (stateLabel) stateLabel.textContent = stateText;
 
     // Update PIR mask checkboxes (config)
-    fieldset.querySelectorAll('.pir-mask input[type="checkbox"]').forEach(cb => {
+    fieldset.querySelectorAll('.pir-mask input[data-mask="on"]').forEach(cb => {
         const bit = Number(cb.dataset.bit);
-        cb.checked = !!(ledConf.pirMask & (1 << bit));
+        cb.checked = !!(ledConf.pirMaskOn & (1 << bit));
+    });
+    fieldset.querySelectorAll('.pir-mask input[data-mask="off"]').forEach(cb => {
+        const bit = Number(cb.dataset.bit);
+        cb.checked = !!(ledConf.pirMaskOff & (1 << bit));
     });
 }
 
@@ -245,11 +268,13 @@ async function load() {
 
     async function updatePirMask(el) {
         const ledIndex = el.dataset.led;
-        const bits = Array.from(app.querySelectorAll(`input[data-led="${ledIndex}"][type="checkbox"]`))
+        const maskType = el.dataset.mask;
+        const bits = Array.from(app.querySelectorAll(`input[data-led="${ledIndex}"][data-mask="${maskType}"][type="checkbox"]`))
             .filter(i => i.checked)
             .map(i => Number(i.dataset.bit));
         let mask = 0; bits.forEach(b => mask |= 1 << b);
-        try { await postForm(deviceURL(dev, "/config/led"), { index: ledIndex, pirMask: mask }); flash(el, true); }
+        const param = maskType === 'on' ? 'pirMaskOn' : 'pirMaskOff';
+        try { await postForm(deviceURL(dev, "/config/led"), { index: ledIndex, [param]: mask }); flash(el, true); }
         catch { flash(el, false); }
     }
 
@@ -306,7 +331,7 @@ async function load() {
                 try { await updateLedField(inp); }
                 finally { sliderUpdateBusy = false; }
             });
-        } else if (inp.dataset.bit !== undefined) {
+        } else if (inp.dataset.bit !== undefined && inp.dataset.mask !== undefined) {
             inp.addEventListener('change', () => updatePirMask(inp));
         }
     });

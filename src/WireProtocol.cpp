@@ -7,7 +7,7 @@
 
 #define CHAR_PTR(X) reinterpret_cast<const char*>(&X)
 
-const size_t PAYLOAD_SIZE = 82;
+const size_t PAYLOAD_SIZE = 86;
 constexpr char WIRE_SCHEMA_JSON[] PROGMEM = R"json(
 [
 {"name": "timestamp", "size": 8, "type": "int"},
@@ -19,7 +19,8 @@ constexpr char WIRE_SCHEMA_JSON[] PROGMEM = R"json(
  {"name": "holdOnMs", "size": 4, "type": "int"},
  {"name": "rampOffMs", "size": 2, "type": "int"},
  {"name": "waitOnMs", "size": 4, "type": "int"},
- {"name": "pirMask", "size": 1, "type": "uint"}
+ {"name": "pirMaskOn", "size": 1, "type": "uint"},
+ {"name": "pirMaskOff", "size": 1, "type": "uint"}
 ]},
 {"name": "ledStates","arrayLen": 4,"sub": [
  {"name": "brightness", "size": 2, "type": "int"},
@@ -48,8 +49,10 @@ void sendWireData(ESP8266WebServer& server) {
         static_assert(sizeof(ledConf.rampOffMs) == 2);
         server.sendContent(CHAR_PTR(ledConf.waitOnMs), sizeof(ledConf.waitOnMs));
         static_assert(sizeof(ledConf.waitOnMs) == 4);
-        server.sendContent(CHAR_PTR(ledConf.pirMask), sizeof(ledConf.pirMask));
-        static_assert(sizeof(ledConf.pirMask) == 1);
+        server.sendContent(CHAR_PTR(ledConf.pirMaskOn), sizeof(ledConf.pirMaskOn));
+        static_assert(sizeof(ledConf.pirMaskOn) == 1);
+        server.sendContent(CHAR_PTR(ledConf.pirMaskOff), sizeof(ledConf.pirMaskOff));
+        static_assert(sizeof(ledConf.pirMaskOff) == 1);
     }
     for (auto ledState : LEDS) {
         auto& brightness = ledState.m_led.m_brightness;
