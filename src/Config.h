@@ -13,6 +13,7 @@ struct LedConfig {
     int16_t rampOnMs;
     uint32_t holdOnMs;
     int16_t rampOffMs;
+    uint32_t waitOnMs;
     uint8_t pirMask;
 };
 

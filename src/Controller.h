@@ -6,17 +6,18 @@
 
 class Controller {
    public:
-    enum class State : uint8_t { OFF, ON, WAITING_OFF };
+    enum class State : uint8_t { OFF, WAITING_ON, ON, WAITING_OFF };
     Led m_led;
     State m_state = State::OFF;
 
     Controller(uint8_t pin, int16_t& brightness, int16_t& rampOn_ms, uint32_t& holdOn_ms,
-               int16_t& rampOff_ms)
+               int16_t& rampOff_ms, uint32_t& waitOn_ms)
         : m_led(pin),
           m_brightness(brightness),
           m_rampOn_ms(rampOn_ms),
           m_holdOn_ms(holdOn_ms),
-          m_rampOff_ms(rampOff_ms) {}
+          m_rampOff_ms(rampOff_ms),
+          m_waitOn_ms(waitOn_ms) {}
 
     void setup() { m_led.setup(); }
 
@@ -27,6 +28,8 @@ class Controller {
     int16_t& m_rampOn_ms;
     uint32_t& m_holdOn_ms;
     int16_t& m_rampOff_ms;
+    uint32_t& m_waitOn_ms;
 
     unsigned long m_offRequested = 0;
+    unsigned long m_onRequested = 0;
 };

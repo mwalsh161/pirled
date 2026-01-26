@@ -8,6 +8,17 @@ void Controller::update(unsigned long now, bool pirActive) {
     switch (m_state) {
         case Controller::State::OFF:
             if (pirActive) {
+                m_onRequested = now;
+                m_state = Controller::State::WAITING_ON;
+                D_PRINTLN("WAITING_ON");
+            }
+            break;
+
+        case Controller::State::WAITING_ON:
+            if (!pirActive) {
+                m_state = Controller::State::OFF;
+                D_PRINTLN("NOPE, OFF");
+            } else if (now - m_onRequested >= m_waitOn_ms) {
                 m_led.setTarget(&m_brightness, &m_rampOn_ms, now);
                 m_state = Controller::State::ON;
                 D_PRINTLN("ON");

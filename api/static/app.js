@@ -132,6 +132,13 @@ function renderLedSkeleton(ledCount, pirCount) {
                     </div>
                 </label><br>
 
+                <label>
+                    <div class="flash-wrapper">
+                        Wait On Time (ms)
+                        <input type="number" step="1000" min="0" data-led="${i}" data-field="waitOnMs">
+                    </div>
+                </label><br>
+
                 <fieldset class="pir-mask">
                     <legend>PIR Mask</legend>
                     ${pirCheckboxes}

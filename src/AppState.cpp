@@ -2,7 +2,12 @@
 #include <pins.h>
 
 Controller makeController(uint8_t pin, LedConfig& ledCfg) {
-    return {pin, ledCfg.brightness, ledCfg.rampOnMs, ledCfg.holdOnMs, ledCfg.rampOffMs};
+    return {pin,
+            ledCfg.brightness,
+            ledCfg.rampOnMs,
+            ledCfg.holdOnMs,
+            ledCfg.rampOffMs,
+            ledCfg.waitOnMs};
 }
 
 std::array<Controller, 4> LEDS = {{

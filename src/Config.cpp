@@ -11,7 +11,7 @@
 #define VIRTUAL_PIR 4
 
 static constexpr uint32_t CONFIG_MAGIC = 0x5049524C;  // "PIRL"
-static constexpr uint16_t CONFIG_VERSION = 2;
+static constexpr uint16_t CONFIG_VERSION = 3;
 
 Config CONFIG;  // Externally visible config instance.
 
@@ -44,6 +44,7 @@ void setConfigDefaults() {
                                .rampOnMs = 1000,
                                .holdOnMs = 10000,
                                .rampOffMs = 1000,
+                               .waitOnMs = 0,
                                .pirMask = pirMask};
     }
 
@@ -145,6 +146,9 @@ ConfigServer::ConfigServer(const char* serviceName) : m_server(80), m_serviceNam
         }
         if (m_server.hasArg("rampOffMs")) {
             CONFIG.ledConfig[i].rampOffMs = m_server.arg("rampOffMs").toInt();
+        }
+        if (m_server.hasArg("waitOnMs")) {
+            CONFIG.ledConfig[i].waitOnMs = max(m_server.arg("waitOnMs").toFloat(), 0.0f);
         }
         if (m_server.hasArg("pirMask")) {
             CONFIG.ledConfig[i].pirMask = static_cast<uint8_t>(m_server.arg("pirMask").toInt());
