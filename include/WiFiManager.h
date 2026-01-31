@@ -3,6 +3,7 @@
 #include <ESP8266WiFi.h>
 
 #include <cstring>
+#include <random>
 
 #include "debug.h"
 
@@ -11,6 +12,7 @@
 #define COLD_RETRY_INITIAL_BACKOFF_MS 2000
 #define COLD_RETRY_MAX_BACKOFF_MS 300000  // 5 minutes
 #define WARM_RETRY_COUNT 3
+#define BACKOFF_JITTER_RATIO 0.1  // 10% jitter
 
 class WiFiManager {
    public:
@@ -54,14 +56,17 @@ class WiFiManager {
 
     bool update(unsigned long now) {
         if (WiFi.status() == WL_CONNECTED) {
-            if (m_state != WIFI_CONNECTED) {
-                // Transitioned to connected
-                m_state = WIFI_CONNECTED;
-                m_warmRetryCount = 0;
-                m_coldRetryBackoff = COLD_RETRY_INITIAL_BACKOFF_MS;
-                notifyConnected();
+            auto ip = WiFi.localIP();
+            if (!isLinkLocal(ip)) {
+                if (m_state != WIFI_CONNECTED) {
+                    // Transitioned to connected
+                    m_state = WIFI_CONNECTED;
+                    m_warmRetryCount = 0;
+                    m_coldRetryBackoff = COLD_RETRY_INITIAL_BACKOFF_MS;
+                    notifyConnected(ip);
+                }
+                return true;
             }
-            return true;
         }
 
         // Disconnected - handle state machine
@@ -110,9 +115,10 @@ class WiFiManager {
                         m_coldRetryBackoff);
                     powerCycleAndConnect();
 
-                    // Update backoff for next time (exponential with ceiling)
-                    m_coldRetryBackoff =
+                    // Update backoff for next time (exponential with ceiling and jitter)
+                    unsigned long newBackoff =
                         min(m_coldRetryBackoff * 2, (unsigned long)COLD_RETRY_MAX_BACKOFF_MS);
+                    m_coldRetryBackoff = applyJitter(newBackoff);
 
                     m_lastRetryTime = now;
                 }
@@ -153,8 +159,8 @@ class WiFiManager {
         return true;
     }
 
-    void notifyConnected() {
-        D_PRINTF("WiFi connected: %s (%s)\n", m_hostname, WiFi.localIP().toString().c_str());
+    void notifyConnected(IPAddress ip) {
+        D_PRINTF("WiFi connected: %s (%s)\n", m_hostname, ip.toString().c_str());
         for (int i = 0; i < m_listenerCount; i++) {
             m_connectedListeners[i](m_hostname);
         }
@@ -164,5 +170,21 @@ class WiFiManager {
         for (int i = 0; i < m_listenerCount; i++) {
             m_disconnectedListeners[i]();
         }
+    }
+
+    unsigned long applyJitter(unsigned long baseValue) {
+        // Apply jitter: baseValue ± (baseValue * BACKOFF_JITTER_RATIO)
+        unsigned long jitterRange = (unsigned long)(baseValue * BACKOFF_JITTER_RATIO);
+        // Random value between -jitterRange and +jitterRange
+        long jitterAmount = (random(2 * jitterRange + 1)) - jitterRange;
+        long result = (long)baseValue + jitterAmount;
+        // Ensure result is positive
+        return max(1UL, (unsigned long)result);
+    }
+
+    bool isLinkLocal(IPAddress ip) {
+        // Link-local addresses are in 169.254.0.0/16 range
+        // These indicate DHCP failed but device got an auto-assigned address
+        return ip[0] == 169 && ip[1] == 254;
     }
 };
