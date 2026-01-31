@@ -21,5 +21,5 @@ std::array<Controller, 4> LEDS = {{
 std::array<uint8_t, 4> PIR_PINS{D6, D7, D2, D5};
 PirStates PIR_STATES = 0;
 
-ConfigServer CONFIG_SERVER{"pirled-controller"};  // TODO: use mac addr to make unique //
-                                                  // WiFi.macAddress().replace(":", "");
+WiFiManager WIFI_MGR;
+ConfigServer CONFIG_SERVER;

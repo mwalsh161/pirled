@@ -186,7 +186,7 @@ function renderPirOverrideSkeleton(pirCount) {
 // ---------- Value update pass ----------
 function updateLedValues(fieldset, ledConf, ledState) {
     // Numeric inputs from config
-    ['brightness', 'rampOnMs', 'holdOnMs', 'rampOffMs'].forEach(field => {
+    ['brightness', 'rampOnMs', 'holdOnMs', 'rampOffMs', 'waitOnMs'].forEach(field => {
         const el = fieldset.querySelector(`[data-field="${field}"]`);
         if (document.activeElement !== el) el.value = ledConf[field];
     });
@@ -321,7 +321,7 @@ async function load() {
 
     // ---------- Attach input handlers ----------
     document.querySelectorAll('#ledContainer input').forEach(inp => {
-        if (['rampOnMs','holdOnMs','rampOffMs'].includes(inp.dataset.field)) {
+        if (['rampOnMs','holdOnMs','rampOffMs', 'waitOnMs'].includes(inp.dataset.field)) {
             inp.addEventListener('change', () => updateLedField(inp));
         } else if (inp.dataset.field === 'brightness') {
             // Fast slider updates with lock

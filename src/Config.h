@@ -22,9 +22,6 @@ struct Config {
     uint32_t magic;
     uint16_t version;
 
-    char hostname[32];
-    char wifiSsid[32];
-    char wifiPassword[32];
     int64_t timestamp;
     std::array<LedConfig, 4> ledConfig;
 
@@ -39,9 +36,10 @@ class ConfigServer {
    public:
     PirStates m_pirOverrides = 0;
 
-    ConfigServer(const char* serviceName);
+    ConfigServer();
 
-    void begin();
+    void onWiFiConnected(const char* hostname);
+    void onWiFiDisconnected();
 
     ~ConfigServer() { m_server.stop(); }
     void handle(unsigned long now);
@@ -49,7 +47,6 @@ class ConfigServer {
    private:
     ESP8266WebServer m_server;
     ArduinoOTAClass m_ota;
-    const char* m_serviceName;
     unsigned long m_saveDebounceTimeMs = 60000;
     unsigned long m_lastRequestTime = 0;
     bool m_saveRequested = false;

@@ -36,16 +36,18 @@ bool validateArg(ESP8266WebServer& server, const char* name, char* dest, size_t 
 PortalServer::PortalServer() : m_server(80) {
     WiFi.mode(WIFI_AP);
     delay(100);
-    WiFi.softAP("ESP8266-Setup");
+    WiFi.softAP("PIRLED-SETUP");
     m_dns.start(DNS_PORT, "*", WiFi.softAPIP());
 
     m_server.on("/save", HTTP_POST, [this]() {
-        if (!validateArg(m_server, "ssid", CONFIG.wifiSsid, sizeof(CONFIG.wifiSsid)) ||
-            !validateArg(m_server, "pass", CONFIG.wifiPassword, sizeof(CONFIG.wifiPassword)) ||
-            !validateArg(m_server, "host", CONFIG.hostname, sizeof(CONFIG.hostname))) {
+        char ssid[32];
+        char password[64];
+        if (!validateArg(m_server, "ssid", ssid, sizeof(ssid)) ||
+            !validateArg(m_server, "pass", password, sizeof(password))) {
             return;  // error already sent
         }
-        saveConfig();  // save immediately
+        WiFi.persistent(true);
+        WiFi.begin(ssid, password);
 
         m_server.send(200, "text/html", "<h2>Saved. Rebooting...</h2>");
         m_server.client().flush();

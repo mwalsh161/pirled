@@ -7,11 +7,12 @@
 
 #include "Logger.h"
 #include "WireProtocol.h"
+#include "debug.h"
 #include "ota_public_key.h"
 #define VIRTUAL_PIR 4
 
 static constexpr uint32_t CONFIG_MAGIC = 0x5049524C;  // "PIRL"
-static constexpr uint16_t CONFIG_VERSION = 3;
+static constexpr uint16_t CONFIG_VERSION = 4;
 
 Config CONFIG;  // Externally visible config instance.
 
@@ -33,10 +34,6 @@ void setConfigDefaults() {
 
     CONFIG.magic = CONFIG_MAGIC;
     CONFIG.version = CONFIG_VERSION;
-
-    cpstr(CONFIG.hostname, "", sizeof(CONFIG.hostname));
-    cpstr(CONFIG.wifiSsid, "", sizeof(CONFIG.wifiSsid));
-    cpstr(CONFIG.wifiPassword, "", sizeof(CONFIG.wifiPassword));
 
     for (size_t i = 0; i < CONFIG.ledConfig.size(); i++) {
         uint8_t pirMask = (1 << i) | (1 << (i + VIRTUAL_PIR));
@@ -60,6 +57,7 @@ bool initConfig() {
                  CONFIG.crc == computeCrc(CONFIG);
 
     if (!valid) {
+        D_PRINTLN("Stored config invalid, loading defaults");
         setConfigDefaults();
     }
     return valid;
@@ -83,10 +81,8 @@ void addCors(ESP8266WebServer& server) {
     server.sendHeader("Access-Control-Allow-Headers", "Content-Type");
 };
 
-ConfigServer::ConfigServer(const char* serviceName) : m_server(80), m_serviceName(serviceName) {
+ConfigServer::ConfigServer() : m_server(80) {
     m_storedConfigValid = initConfig();
-
-    Update.installSignature(&hash, &sign);
 
     // Handle preflight OPTIONS requests
     auto handleOptions = [&]() {
@@ -108,23 +104,6 @@ ConfigServer::ConfigServer(const char* serviceName) : m_server(80), m_serviceNam
         m_server.send(200, "application/json", String(m_saveDebounceTimeMs));
     });
     m_server.on("/save_debounce", HTTP_OPTIONS, handleOptions);
-
-    m_server.on("/config/network", HTTP_POST, [&]() {
-        if (m_server.hasArg("hostname")) {
-            cpstr(CONFIG.hostname, m_server.arg("hostname").c_str(), sizeof(CONFIG.hostname));
-        }
-        if (m_server.hasArg("wifiSsid")) {
-            cpstr(CONFIG.wifiSsid, m_server.arg("wifiSsid").c_str(), sizeof(CONFIG.wifiSsid));
-        }
-        if (m_server.hasArg("wifiPassword")) {
-            cpstr(CONFIG.wifiPassword, m_server.arg("wifiPassword").c_str(),
-                  sizeof(CONFIG.wifiPassword));
-        }
-        m_lastRequestTime = millis();
-        addCors(m_server);
-        m_server.send(200);
-    });
-    m_server.on("/config/network", HTTP_OPTIONS, handleOptions);
 
     m_server.on("/config/led", HTTP_POST, [&]() {
         addCors(m_server);
@@ -222,11 +201,22 @@ ConfigServer::ConfigServer(const char* serviceName) : m_server(80), m_serviceNam
     m_server.on("/logs", HTTP_OPTIONS, handleOptions);
 }
 
-void ConfigServer::begin() {
+void ConfigServer::onWiFiConnected(const char* hostname) {
+    log(">WiFi");
+    D_PRINTLN("WiFi connected; starting ConfigServer, MDNS, OTA");
     m_server.begin();
-    MDNS.begin(CONFIG.hostname);
-    MDNS.addService(m_serviceName, "http", "tcp", 80);
+    MDNS.begin(hostname);
+    MDNS.addService(0, "http", "tcp", 80);  // Use hostname.
+    Update.installSignature(&hash, &sign);
     m_ota.begin(false);  // We manage MDNS ourselves.
+}
+
+void ConfigServer::onWiFiDisconnected() {
+    log("<WiFi");
+    D_PRINTLN("WiFi disconnected; stopping ConfigServer, MDNS, OTA");
+    m_server.close();
+    MDNS.close();
+    m_ota.end();
 }
 
 void ConfigServer::handle(unsigned long now) {

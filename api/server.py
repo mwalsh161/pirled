@@ -21,7 +21,7 @@ SERVICES: list[tuple[str, str]] = []
 
 class MDNSListener(ServiceListener):
     def add_service(self, zc: Zeroconf, type_: str, name: str) -> None:
-        if not name.startswith("pirled-controller.") or (type_, name) in SERVICES:
+        if not name.startswith("pirled-") or (type_, name) in SERVICES:
             return
         SERVICES.append((type_, name))
 
