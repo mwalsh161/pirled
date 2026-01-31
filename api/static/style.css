@@ -20,6 +20,46 @@ body {
     gap: 1.5rem;
 }
 
+/* --- Device Selector --- */
+#deviceSelector {
+    background: #fff;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    padding: 1rem;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+}
+
+#deviceSelector label {
+    display: block;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+    font-size: 1rem;
+}
+
+#deviceDropdown {
+    width: 100%;
+    padding: 0.6rem;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    font-size: 1rem;
+    background-color: #fff;
+    color: #222;
+    cursor: pointer;
+    box-sizing: border-box;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+#deviceDropdown:hover {
+    border-color: #4f8ef7;
+    box-shadow: 0 0 0 2px rgba(79, 142, 247, 0.1);
+}
+
+#deviceDropdown:focus {
+    outline: none;
+    border-color: #4f8ef7;
+    box-shadow: 0 0 0 3px rgba(79, 142, 247, 0.2);
+}
+
 /* --- Card-style Fieldsets --- */
 fieldset {
     margin-bottom: 1em;

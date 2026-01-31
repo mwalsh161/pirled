@@ -65,7 +65,10 @@ def get_devices():
         if info and info.server and info.port:
             try:
                 ip = ping(socket.gethostbyname(info.server))
-                devs.append({"host": ip, "port": info.port, "name": name})
+                # Strip the mDNS suffix (e.g., "._http._tcp.local.") from the name
+                # NOTE, this looks like the hostname but technically isn't (see firmware).
+                clean_name = name.split(".", maxsplit=1)[0]
+                devs.append({"host": ip, "port": info.port, "name": clean_name})
             except socket.gaierror:  # Failed to resolve.
                 failed.append((type_, name))
                 continue

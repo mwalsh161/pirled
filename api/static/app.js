@@ -221,6 +221,18 @@ function updatePirOverride(pirOverride, pirState) {
     });
 }
 
+// ---------- URL helpers ----------
+function getDeviceNameFromURL() {
+    const params = new URLSearchParams(window.location.search);
+    return params.get("device");
+}
+
+function setDeviceInURL(name) {
+    const params = new URLSearchParams(window.location.search);
+    params.set("device", name);
+    window.history.replaceState(null, "", "?" + params.toString());
+}
+
 // ---------- Main load ----------
 async function load() {
     const devices = await fetchJSON("api/devices");
@@ -229,10 +241,28 @@ async function load() {
         return;
     }
 
-    const dev = devices[0];
+    // Get device from URL, or use first device
+    const urlName = getDeviceNameFromURL();
+    let dev = devices.find(d => d.name === urlName);
+    if (!dev) {
+        dev = devices[0];
+        setDeviceInURL(dev.name);
+    }
+
+    // Device selector
+    const deviceOptions = devices.map(d => 
+        `<option value="${d.name}" ${d.name === dev.name ? "selected" : ""}>${d.name} (${d.host}:${d.port})</option>`
+    ).join("");
+    
+    const deviceSelectorHTML = `
+        <div id="deviceSelector" style="margin-bottom: 1rem;">
+            <label for="deviceDropdown">Select Device:</label>
+            <select id="deviceDropdown">${deviceOptions}</select>
+        </div>
+    `;
 
     app.innerHTML = `
-        <small>${dev.name} (${dev.host}:${dev.port})</small>        
+        ${deviceSelectorHTML}
         <h3>LED Configuration</h3>
         <div id="ledContainer">${renderLedSkeleton(4, 8)}</div>
         
@@ -341,6 +371,19 @@ async function load() {
     });
 
     document.getElementById("refreshLogs").onclick = refreshLogs;
+
+    // Device selector handler
+    const deviceDropdown = document.getElementById("deviceDropdown");
+    if (deviceDropdown) {
+        deviceDropdown.addEventListener("change", (e) => {
+            const selectedName = e.target.value;
+            const selectedDevice = devices.find(d => d.name === selectedName);
+            if (selectedDevice) {
+                setDeviceInURL(selectedName);
+                load();
+            }
+        });
+    }
 
     refresh();
 }
