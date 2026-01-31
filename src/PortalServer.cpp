@@ -53,6 +53,7 @@ PortalServer::PortalServer() : m_server(80) {
         m_server.client().flush();
         delay(500);
 
+        WiFi.mode(WIFI_STA);  // Don't boot to AP mode again.
         ESP.restart();
     });
 

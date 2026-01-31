@@ -17,11 +17,13 @@ void runPortalBlocking() {
     }
     while (true) {
         server.handle();  // Eventually will restart ESP.
+        delay(1);
     }
 }
 
 void setup() {
-    D_BEGIN(9600);
+    D_BEGIN(115200);
+    D_PRINTLN("");
 
     analogWriteResolution(10);  // For Leds.
 
@@ -29,8 +31,10 @@ void setup() {
     WIFI_MGR.subscribe([](const char* hostname) { CONFIG_SERVER.onWiFiConnected(hostname); },
                        []() { CONFIG_SERVER.onWiFiDisconnected(); });
 
-    if (!WIFI_MGR.connectStoredWiFi()) {
+    if (!WIFI_MGR.hasCredentials()) {
         runPortalBlocking();
+        D_PRINTLN("Not reachable");
+        ESP.restart();  // Not reachable.
     }  // Will not return unless connected (possible it could disconnect again...state machine?).
 
     for (const auto& pin : PIR_PINS) {

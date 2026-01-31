@@ -28,6 +28,11 @@ class WiFiManager {
         WiFi.persistent(false);  // We already read stored config, don't rewrite it.
         WiFi.setAutoConnect(false);
         WiFi.setAutoReconnect(false);  // We will manage to reliably restart services.
+
+        D_PRINTF("MAC: %02X:%02X:%02X:%02X:%02X:%02X\n", mac[0], mac[1], mac[2], mac[3], mac[4],
+                 mac[5]);
+        D_PRINTF("WiFi hostname set to: %s\n", m_hostname);
+        m_state = WIFI_COLD_RETRY;
     }
 
     bool subscribe(ConnectedCB cb, DisconnectedCB disCB) {
@@ -40,11 +45,17 @@ class WiFiManager {
         return false;
     }
 
+    bool hasCredentials() {
+        station_config conf;
+        wifi_station_get_config(&conf);
+        size_t ssid_len = strnlen((char*)conf.ssid, sizeof(conf.ssid));
+        return ssid_len > 0 && ssid_len < sizeof(conf.ssid);
+    }
+
     bool update(unsigned long now) {
         if (WiFi.status() == WL_CONNECTED) {
             if (m_state != WIFI_CONNECTED) {
                 // Transitioned to connected
-                D_PRINTLN("WiFi: Connected");
                 m_state = WIFI_CONNECTED;
                 m_warmRetryCount = 0;
                 m_coldRetryBackoff = COLD_RETRY_INITIAL_BACKOFF_MS;
@@ -114,17 +125,6 @@ class WiFiManager {
         return false;
     }
 
-    bool connectStoredWiFi() {
-        D_PRINTF("Trying WiFi (hostname: %s)\n", m_hostname);
-
-        if (!powerCycleAndConnect()) {
-            D_PRINTLN("No stored WiFi credentials");
-            return false;
-        }
-
-        return waitForWiFi();
-    }
-
    private:
     static const int MAX_LISTENERS = 8;
     ConnectedCB m_connectedListeners[MAX_LISTENERS];
@@ -143,15 +143,9 @@ class WiFiManager {
         const char* password = reinterpret_cast<const char*>(conf.password);
         size_t ssid_len = strnlen((char*)conf.ssid, sizeof(conf.ssid));
 
-        if (ssid_len == 0 || ssid_len == sizeof(conf.ssid)) {
-            return false;
-        }
-        D_PRINTF("SSID: %s\n", ssid);
+        if (ssid_len == 0 || ssid_len == sizeof(conf.ssid)) return false;
 
         WiFi.mode(WIFI_STA);
-        WiFi.disconnect(true, false);  // Disconnect, don't clear credentials
-        delay(200);
-
         D_PRINTF("Calling WiFi.begin(\"%s\", \"%c**%c\")\n", ssid, password[0],
                  password[strlen(password) - 1]);
         WiFi.begin(ssid, password);
@@ -159,41 +153,8 @@ class WiFiManager {
         return true;
     }
 
-    bool waitForWiFi() {
-        D_PRINTLN("Waiting for WiFi connection");
-        auto start = millis();
-        int lastStatus = -1;
-        while (millis() - start < WIFI_TIMEOUT_MS) {
-            int status = WiFi.status();
-            if (status != lastStatus) {
-                D_PRINTF("WiFi status: %d\n", status);
-                lastStatus = status;
-            }
-            switch (status) {
-                case WL_CONNECTED:
-                    D_PRINTLN("Connected!");
-                    return true;
-                case WL_NO_SSID_AVAIL:
-                    D_PRINTLN("WL_NO_SSID_AVAIL");
-                    return false;
-                case WL_WRONG_PASSWORD:
-                    D_PRINTLN("WL_WRONG_PASSWORD");
-                    return false;
-                case WL_CONNECT_FAILED:
-                    D_PRINTLN("WL_CONNECT_FAILED");
-                    return false;
-                default:
-                    break;
-            }
-            delay(10);
-        }
-
-        D_PRINTF("Timeout - final status: %d\n", WiFi.status());
-        return WiFi.status() == WL_CONNECTED;
-    }
-
     void notifyConnected() {
-        D_PRINTF("WiFi connected: %s\n", m_hostname);
+        D_PRINTF("WiFi connected: %s (%s)\n", m_hostname, WiFi.localIP().toString().c_str());
         for (int i = 0; i < m_listenerCount; i++) {
             m_connectedListeners[i](m_hostname);
         }

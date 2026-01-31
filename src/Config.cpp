@@ -203,7 +203,7 @@ ConfigServer::ConfigServer() : m_server(80) {
 
 void ConfigServer::onWiFiConnected(const char* hostname) {
     log(">WiFi");
-    D_PRINTLN("WiFi connected; starting ConfigServer, MDNS, OTA");
+    D_PRINTLN("starting ConfigServer, MDNS, OTA");
     m_server.begin();
     MDNS.begin(hostname);
     MDNS.addService(0, "http", "tcp", 80);  // Use hostname.
@@ -213,7 +213,7 @@ void ConfigServer::onWiFiConnected(const char* hostname) {
 
 void ConfigServer::onWiFiDisconnected() {
     log("<WiFi");
-    D_PRINTLN("WiFi disconnected; stopping ConfigServer, MDNS, OTA");
+    D_PRINTLN("stopping ConfigServer, MDNS, OTA");
     m_server.close();
     MDNS.close();
     m_ota.end();
