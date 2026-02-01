@@ -15,10 +15,10 @@ Controller makeController(uint8_t pin, LedConfig& ledCfg) {
 std::array<Controller, 4> LEDS = {{
     makeController(D4, CONFIG.ledConfig[0]),  // oof D4...epileptic on reset.
     makeController(D8, CONFIG.ledConfig[1]),
-    makeController(D1, CONFIG.ledConfig[2]),
+    makeController(D5, CONFIG.ledConfig[2]),
     makeController(D3, CONFIG.ledConfig[3]),
 }};
-std::array<uint8_t, 4> PIR_PINS{D6, D7, D2, D5};
+std::array<uint8_t, 4> PIR_PINS{D6, D7, D1, D2};
 PirStates PIR_STATES = 0;
 
 WiFiManager WIFI_MGR;

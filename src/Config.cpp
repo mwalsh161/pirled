@@ -13,6 +13,7 @@
 
 static constexpr uint32_t CONFIG_MAGIC = 0x5049524C;  // "PIRL"
 static constexpr uint16_t CONFIG_VERSION = 4;
+static const char FIRMWARE_VERSION[] PROGMEM = "44b1583";
 
 Config CONFIG;  // Externally visible config instance.
 
@@ -138,7 +139,7 @@ ConfigServer::ConfigServer() : m_server(80) {
                 static_cast<uint8_t>(m_server.arg("pirMaskOff").toInt());
         }
         m_lastRequestTime = millis();
-        m_server.send(200);  // TODO return this LEDs brightness
+        sendWireData(m_server);
     });
     m_server.on("/config/led", HTTP_OPTIONS, handleOptions);
 
@@ -165,7 +166,7 @@ ConfigServer::ConfigServer() : m_server(80) {
             return;
         }
         m_pirOverrides = static_cast<PirStates>(m_server.arg("val").toInt());
-        m_server.send(200);
+        sendWireData(m_server);
     });
     m_server.on("/pir_override", HTTP_OPTIONS, handleOptions);
 
@@ -199,6 +200,13 @@ ConfigServer::ConfigServer() : m_server(80) {
         }
     });
     m_server.on("/logs", HTTP_OPTIONS, handleOptions);
+
+    m_server.on("/firmware_version", HTTP_GET, [&]() {
+        addCors(m_server);
+        String version = String((__FlashStringHelper*)FIRMWARE_VERSION);
+        m_server.send(200, "application/json", "{\"version\":\"" + version + "\"}");
+    });
+    m_server.on("/firmware_version", HTTP_OPTIONS, handleOptions);
 }
 
 void ConfigServer::onWiFiConnected(const char* hostname) {

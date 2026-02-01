@@ -30,13 +30,10 @@ function cmpBuff(a, b){
     return a.byteLength==b.byteLength && new Uint8Array(a).every((v,i)=>v===new Uint8Array(b)[i])
 }
 
-async function fetchRaw(schema, url) {
+async function fetchRaw(url) {
     const r = await fetch(url);
     if (!r.ok) throw new Error(url);
-    const raw = await r.arrayBuffer();
-    const {dat, offset} = processSchema(schema, new DataView(raw), 0)
-    if (offset != raw.byteLength) throw new Error(`Schema doesn't match payload`)
-    return {dat, raw};
+    return await r.arrayBuffer();
 }
 
 const littleEndian = true;
@@ -284,16 +281,52 @@ async function load() {
         <button id="refreshLogs">Refresh Logs</button>
         <div class="logs"></div>
         </details>
+        
+        <div id="fineprint" style="font-size: 0.75rem; color: #999; margin-top: 2rem; padding-top: 1rem; border-top: 1px solid #eee; text-align: center;"></div>
     `;
 
-    let sliderUpdateBusy = false;
+    let updateBusy = false;    // Prevents polling while a POST/DOM update is in flight
+    let skipNextPoll = false;  // Skip immediate poll after POST to avoid redundant GET
+    let lastChanged = false;   // Track if last state update was a change (for skip reschedule)
+    let lastMsg = null; // Used to detect changes.
+
+    // Parse state response and update DOM. Sets lastChanged based on state.
+    function processState(rawBuf) {
+        const {dat: combined, offset} = processSchema(schema, new DataView(rawBuf), 0);
+        if (offset != rawBuf.byteLength) throw new Error(`Schema doesn't match payload`);
+
+        const changed = lastMsg ? !cmpBuff(lastMsg, rawBuf) : true;
+        lastChanged = changed;
+        
+        // Update DOM only if state changed
+        if (changed) {
+            for (let i = 0; i < 4; i ++){
+                const fieldset = app.querySelector(`fieldset[data-led-index="${i}"]`);
+                updateLedValues(fieldset, combined.ledConfigs[i], combined.ledStates[i]);
+            }
+            updatePirOverride(combined.pirOverride, combined.pirState);
+            document.getElementById("lastUpdate").textContent = `Last update: ${new Date().toLocaleTimeString()}`;
+        }
+
+        document.getElementById("configSaved").textContent = `Config saved: ${new Date(combined.timestamp * 1000).toLocaleString()}`;
+        
+        lastMsg = rawBuf;
+    }
 
     // ---------- POST helpers ----------
     async function updateLedField(el) {
         const data = { index: el.dataset.led };
         data[el.dataset.field] = el.type === 'number' ? Number(el.value) : el.value;
-        try { await postForm(deviceURL(dev, "/config/led"), data); flash(el, true); }
+        updateBusy = true;
+        try {
+            const resp = await postForm(deviceURL(dev, "/config/led"), data);
+            const buf = await resp.arrayBuffer();
+            processState(buf);
+            flash(el, true);
+            skipNextPoll = true;  // We just got authoritative state, skip the next poll
+        }
         catch { flash(el, false); }
+        finally { updateBusy = false; }
     }
 
     async function updatePirMask(el) {
@@ -304,8 +337,16 @@ async function load() {
             .map(i => Number(i.dataset.bit));
         let mask = 0; bits.forEach(b => mask |= 1 << b);
         const param = maskType === 'on' ? 'pirMaskOn' : 'pirMaskOff';
-        try { await postForm(deviceURL(dev, "/config/led"), { index: ledIndex, [param]: mask }); flash(el, true); }
+        updateBusy = true;
+        try {
+            const resp = await postForm(deviceURL(dev, "/config/led"), { index: ledIndex, [param]: mask });
+            const buf = await resp.arrayBuffer();
+            processState(buf);
+            flash(el, true);
+            skipNextPoll = true;
+        }
         catch { flash(el, false); }
+        finally { updateBusy = false; }
     }
 
     async function updatePirOverrideField(el) {
@@ -313,34 +354,41 @@ async function load() {
             .filter(i => i.checked)
             .map(i => Number(i.dataset.bit));
         let val = 0; bits.forEach(b => val |= 1 << b);
-        try { await postForm(deviceURL(dev, "/pir_override"), { val }); flash(el, true); }
+        updateBusy = true;
+        try {
+            const resp = await postForm(deviceURL(dev, "/pir_override"), { val });
+            const buf = await resp.arrayBuffer();
+            processState(buf);
+            flash(el, true);
+            skipNextPoll = true;
+        }
         catch { flash(el, false); }
+        finally { updateBusy = false; }
     }
 
-    // ---------- Refresh ----------
+    // ---------- One-time Refresh ----------
     const schema = await fetchJSON(deviceURL(dev, "/combined.schema"));
     const saveDebounce = await fetchJSON(deviceURL(dev, "/save_debounce"));
     document.getElementById("debounce").value = saveDebounce;
+    const firmwareVersion = await fetchJSON(deviceURL(dev, "/firmware_version"));
+    document.getElementById("fineprint").textContent = `Firmware: ${firmwareVersion.version}`;
 
-    let lastMsg = null; // Used to detect changes.
-
+    // ---------- Refresh loop ----------
     async function refresh() {
-        const currentMsg = await fetchRaw(schema, deviceURL(dev, "/combined.bin"));
-        const combined = currentMsg.dat;
-        const changed = lastMsg ? !cmpBuff(lastMsg.raw, currentMsg.raw) : true;
-        lastMsg = currentMsg;
-
-        // Update all dynamic values
-        for (let i = 0; i < 4; i ++){
-            const fieldset = app.querySelector(`fieldset[data-led-index="${i}"]`);
-            updateLedValues(fieldset, combined.ledConfigs[i], combined.ledStates[i]);
+        try {
+            if (skipNextPoll) {
+                skipNextPoll = false;
+            } else if (!updateBusy) {
+                const buf = await fetchRaw(deviceURL(dev, "/combined.bin"));
+                processState(buf);
+            }
+            
+            setTimeout(refresh, lastChanged ? 10 : 500);
+        } catch (e) {
+            console.error("Refresh error:", e);
+            // Network error, try again soon
+            setTimeout(refresh, 100);
         }
-        updatePirOverride(combined.pirOverride, combined.pirState);
-
-        document.getElementById("lastUpdate").textContent = `Last update: ${new Date().toLocaleTimeString()}`;
-        document.getElementById("configSaved").textContent = `Config saved: ${new Date(combined.timestamp * 1000).toLocaleString()}`;
-
-        setTimeout(refresh, changed ? 10 : 500)
     }
 
     // Logs refresh
@@ -356,10 +404,8 @@ async function load() {
         } else if (inp.dataset.field === 'brightness') {
             // Fast slider updates with lock
             inp.addEventListener('input', async () => {
-                if (sliderUpdateBusy) return;
-                sliderUpdateBusy = true;
-                try { await updateLedField(inp); }
-                finally { sliderUpdateBusy = false; }
+                if (updateBusy) return;
+                await updateLedField(inp);
             });
         } else if (inp.dataset.bit !== undefined && inp.dataset.mask !== undefined) {
             inp.addEventListener('change', () => updatePirMask(inp));
