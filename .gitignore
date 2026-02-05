@@ -1,12 +1,35 @@
-.env
-.pio
-.vscode
+node_modules
+dist
+dist-ssr
+*.local
+__pycache__
+*.pyc
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
 .DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.pio
 
-*.log
-*.log.*
-
+# App specific
+.env
 *.pem
 include/ota_public_key.h
 pirled-backups/
 fp-info-cache
+
+# Logs
+logs
+*.log
+*.log.*
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
