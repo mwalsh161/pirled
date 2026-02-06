@@ -1,10 +1,3 @@
-repos:
-  - repo: local
-    hooks:
-      - id: update-firmware-version
-        name: Update firmware version hash
-        entry: scripts/hooks/update-version.sh
-        language: script
-        always_run: true
-        pass_filenames: false
-        stages: [commit]
+repos: []
+# Version stamping moved to build time (scripts/stamp-version.sh)
+# Called during PlatformIO and React builds, not on commit

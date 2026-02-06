@@ -1,9 +1,10 @@
 # pre:generate_public_key.py
-Import("env")
 import os
 
+Import("env")  # type: ignore  # noqa: F821
+
 public_key_path = "keys/public.pem"
-header_path = os.path.join(env.subst("$PROJECT_INCLUDE_DIR"), "ota_public_key.h")
+header_path = os.path.join(env.subst("$PROJECT_INCLUDE_DIR"), "ota_public_key.h")  # type: ignore # noqa: F821
 
 with open(public_key_path, "r") as f:
     key = f.read()

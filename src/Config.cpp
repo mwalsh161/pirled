@@ -9,11 +9,20 @@
 #include "WireProtocol.h"
 #include "debug.h"
 #include "ota_public_key.h"
+
+#ifndef FIRMWARE_VERSION
+#error "FIRMWARE_VERSION not set. Define via PlatformIO build (see scripts/set_firmware_version.py)"
+#endif
+
+// Stringify macros to convert FIRMWARE_VERSION define to string literal
+#define STRINGIFY(x) #x
+#define STRINGIFY_EXPANSION(x) STRINGIFY(x)
+
 #define VIRTUAL_PIR 4
 
 static constexpr uint32_t CONFIG_MAGIC = 0x5049524C;  // "PIRL"
 static constexpr uint16_t CONFIG_VERSION = 4;
-static const char FIRMWARE_VERSION[] PROGMEM = "44b1583";
+static const char FIRMWARE_VERSION_STR[] PROGMEM = STRINGIFY_EXPANSION(FIRMWARE_VERSION);
 
 Config CONFIG;  // Externally visible config instance.
 
@@ -203,7 +212,7 @@ ConfigServer::ConfigServer() : m_server(80) {
 
     m_server.on("/firmware_version", HTTP_GET, [&]() {
         addCors(m_server);
-        String version = String((__FlashStringHelper*)FIRMWARE_VERSION);
+        String version = String((__FlashStringHelper*)FIRMWARE_VERSION_STR);
         m_server.send(200, "application/json", "{\"version\":\"" + version + "\"}");
     });
     m_server.on("/firmware_version", HTTP_OPTIONS, handleOptions);

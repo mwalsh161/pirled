@@ -1,6 +1,7 @@
-Import("env")
 import os
 import shutil
+
+Import("env")  # type: ignore  # noqa: F821
 
 
 def sign_before_upload(source, target, env):
@@ -31,4 +32,4 @@ def sign_before_upload(source, target, env):
     print("Firmware signed and ready for upload")
 
 
-env.AddPreAction("upload", sign_before_upload)
+env.AddPreAction("upload", sign_before_upload)  # type: ignore # noqa: F821
