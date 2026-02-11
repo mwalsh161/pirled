@@ -49,9 +49,11 @@ class WiFiManager {
 
     bool hasCredentials() {
         station_config conf;
-        wifi_station_get_config(&conf);
+        if (!wifi_station_get_config(&conf)) return false;
         size_t ssid_len = strnlen((char*)conf.ssid, sizeof(conf.ssid));
-        return ssid_len > 0 && ssid_len < sizeof(conf.ssid);
+        size_t password_len = strnlen((char*)conf.password, sizeof(conf.password));
+        return ssid_len > 0 && ssid_len < sizeof(conf.ssid) && password_len > 0 &&
+               password_len < sizeof(conf.password);
     }
 
     bool update(unsigned long now) {
@@ -144,16 +146,19 @@ class WiFiManager {
 
     bool powerCycleAndConnect() {
         station_config conf;
-        wifi_station_get_config(&conf);
+        if (!wifi_station_get_config(&conf)) return false;
         const char* ssid = reinterpret_cast<const char*>(conf.ssid);
         const char* password = reinterpret_cast<const char*>(conf.password);
         size_t ssid_len = strnlen((char*)conf.ssid, sizeof(conf.ssid));
+        size_t password_len = strnlen((char*)conf.password, sizeof(conf.password));
 
-        if (ssid_len == 0 || ssid_len == sizeof(conf.ssid)) return false;
+        if (ssid_len == 0 || ssid_len == sizeof(conf.ssid) || password_len == 0 ||
+            password_len == sizeof(conf.password))
+            return false;
 
         WiFi.mode(WIFI_STA);
         D_PRINTF("Calling WiFi.begin(\"%s\", \"%c**%c\")\n", ssid, password[0],
-                 password[strlen(password) - 1]);
+                 password[password_len - 1]);
         WiFi.begin(ssid, password);
         WiFi.status();
         return true;

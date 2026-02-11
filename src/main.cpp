@@ -26,6 +26,7 @@ void setup() {
     D_PRINTLN("");
 
     analogWriteResolution(10);  // For Leds.
+    CONFIG_SERVER.setup();
 
     WIFI_MGR.setup("pirled-");
     WIFI_MGR.subscribe([](const char* hostname) { CONFIG_SERVER.onWiFiConnected(hostname); },
@@ -56,7 +57,7 @@ void loop() {
     for (size_t i = 0; i < PIR_PINS.size(); i++) {
         PIR_STATES |= (digitalRead(PIR_PINS[i]) == HIGH) << i;
     }
-    PIR_STATES |= CONFIG_SERVER.m_pirOverrides;
+    PIR_STATES |= CONFIG_SERVER.pirOverrides();
 
     for (size_t i = 0; i < LEDS.size(); i++) {
         LEDS[i].update(now, PIR_STATES);

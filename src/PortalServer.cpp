@@ -5,14 +5,15 @@
 
 #define DNS_PORT 53
 
+namespace {
 #ifndef __INTELLISENSE__
 // clang-format off
-const static char SPLASH_HTML[] PROGMEM =
+const char SPLASH_HTML[] PROGMEM =
 #include "static/splash.html"
 ;
 // clang-format on
 #else
-const static char SPLASH_HTML[] PROGMEM = "";
+const char SPLASH_HTML[] PROGMEM = "";
 #endif
 
 bool safeCopyString(const String& src, char* dest, size_t destSize) {
@@ -32,6 +33,7 @@ bool validateArg(ESP8266WebServer& server, const char* name, char* dest, size_t 
     }
     return true;
 }
+}  // namespace
 
 PortalServer::PortalServer() : m_server(80) {
     WiFi.mode(WIFI_AP);

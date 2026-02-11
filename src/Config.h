@@ -2,6 +2,7 @@
 
 #include <ArduinoOTA.h>
 #include <ESP8266WebServer.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #include <array>
@@ -28,15 +29,17 @@ struct Config {
     uint32_t crc;
 };
 
-extern Config CONFIG;
+const Config& getConfig();
+LedConfig& getLedConfig(size_t index);
 
 bool saveConfig();  // Use with care to avoid eeprom wear.
 
 class ConfigServer {
    public:
-    PirStates m_pirOverrides = 0;
-
     ConfigServer();
+    bool setup();
+    PirStates pirOverrides() const { return m_pirOverrides; }
+    void setPirOverrides(PirStates overrides) { m_pirOverrides = overrides; }
 
     void onWiFiConnected(const char* hostname);
     void onWiFiDisconnected();
@@ -51,9 +54,7 @@ class ConfigServer {
     unsigned long m_lastRequestTime = 0;
     bool m_saveRequested = false;
     bool m_storedConfigValid = false;
+    bool m_initialized = false;
     uint32_t m_configSaves = 0;
-
-    const PirStates* m_pirStatesPtr = nullptr;
-    std::array<const uint8_t*, 4> m_ledStatesPtrs = {nullptr, nullptr, nullptr, nullptr};
-    std::array<const int16_t*, 4> m_brightnessPtrs = {nullptr, nullptr, nullptr, nullptr};
+    PirStates m_pirOverrides = 0;
 };

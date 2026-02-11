@@ -2,7 +2,9 @@
 
 #include "debug.h"
 
+namespace {
 int16_t ZERO = 0;
+}  // namespace
 
 void Controller::update(unsigned long now, uint8_t pirStates) {
     switch (m_state) {
