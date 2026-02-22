@@ -45,16 +45,12 @@ class ConfigServer {
     void onWiFiDisconnected();
 
     ~ConfigServer() { m_server.stop(); }
-    void handle(unsigned long now);
+    void handle();
 
    private:
     ESP8266WebServer m_server;
     ArduinoOTAClass m_ota;
-    unsigned long m_saveDebounceTimeMs = 60000;
-    unsigned long m_lastRequestTime = 0;
-    bool m_saveRequested = false;
     bool m_storedConfigValid = false;
     bool m_initialized = false;
-    uint32_t m_configSaves = 0;
     PirStates m_pirOverrides = 0;
 };

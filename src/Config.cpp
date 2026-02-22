@@ -27,6 +27,12 @@ constexpr uint32_t CONFIG_MAGIC = 0x5049524C;  // "PIRL"
 constexpr uint16_t CONFIG_VERSION = 4;
 const char FIRMWARE_VERSION_STR[] PROGMEM = STRINGIFY_EXPANSION(FIRMWARE_VERSION);
 Config s_config;
+
+constexpr uint8_t CFG_BOOT_SOURCE_STORED = 0;
+constexpr uint8_t CFG_BOOT_SOURCE_DEFAULTS = 1;
+constexpr uint8_t CFG_SAVE_NO_CHANGE = 0;
+constexpr uint8_t CFG_SAVE_COMMITTED = 1;
+constexpr uint8_t CFG_SAVE_COMMIT_FAILED = 2;
 }  // namespace
 
 const Config& getConfig() { return s_config; }
@@ -64,26 +70,56 @@ bool initConfig() {
     EEPROM.begin(sizeof(Config));
     EEPROM.get(0, s_config);
 
-    bool valid = s_config.magic == CONFIG_MAGIC && s_config.version == CONFIG_VERSION &&
-                 s_config.crc == computeCrc(s_config);
+    uint32_t storedMagic = s_config.magic;
+    uint16_t storedVersion = s_config.version;
+    uint32_t storedCrc = s_config.crc;
+    uint32_t computedCrc = computeCrc(s_config);
+    bool magicValid = s_config.magic == CONFIG_MAGIC;
+    bool versionValid = s_config.version == CONFIG_VERSION;
+    bool crcValid = s_config.crc == computedCrc;
+    bool valid = magicValid && versionValid && crcValid;
+    uint8_t bootSource = CFG_BOOT_SOURCE_STORED;
 
     if (!valid) {
         D_PRINTLN("Stored config invalid, loading defaults");
         setConfigDefaults();
+        bootSource = CFG_BOOT_SOURCE_DEFAULTS;
     }
+
+    // cb,<boot_source>,<valid>,<magic_ok>,<version_ok>,<crc_ok>,<stored_magic>,<stored_version>,<stored_crc>,<computed_crc>
+    char status[128] = "";
+    snprintf(status, sizeof(status), "cb,%u,%u,%u,%u,%u,%lu,%u,%lu,%lu", bootSource, valid, magicValid,
+             versionValid, crcValid, static_cast<unsigned long>(storedMagic), storedVersion,
+             static_cast<unsigned long>(storedCrc), static_cast<unsigned long>(computedCrc));
+    log(status);
+    D_PRINTLN(status);
+
     return valid;
 }
 
 bool saveConfig() {
+    s_config.crc = computeCrc(s_config);
+
     Config stored;
     EEPROM.get(0, stored);
+    char saveStatus[8] = "";
     if (memcmp(&stored, &s_config, sizeof(Config)) == 0) {
-        return false;
+        snprintf(saveStatus, sizeof(saveStatus), "cs,%u", CFG_SAVE_NO_CHANGE);
+        log(saveStatus);
+        D_PRINTLN(saveStatus);
+        return true;
     }
 
-    s_config.crc = computeCrc(s_config);
     EEPROM.put(0, s_config);
-    EEPROM.commit();
+    if (!EEPROM.commit()) {
+        snprintf(saveStatus, sizeof(saveStatus), "cs,%u", CFG_SAVE_COMMIT_FAILED);
+        log(saveStatus);
+        D_PRINTLN(saveStatus);
+        return false;
+    }
+    snprintf(saveStatus, sizeof(saveStatus), "cs,%u", CFG_SAVE_COMMITTED);
+    log(saveStatus);
+    D_PRINTLN(saveStatus);
     return true;
 }
 
@@ -126,22 +162,6 @@ ConfigServer::ConfigServer() : m_server(80) {
         addCors(m_server);
         m_server.send(204);  // No Content
     };
-
-    m_server.on("/save_debounce", HTTP_POST, [&]() {
-        int32_t debounceMs = 0;
-        if (!m_server.hasArg("val") || !parseInt32Strict(m_server.arg("val"), debounceMs)) {
-            sendInvalidArg(m_server, "val");
-            return;
-        }
-        m_saveDebounceTimeMs = static_cast<unsigned long>(constrain(debounceMs, 0, INT32_MAX));
-        addCors(m_server);
-        m_server.send(200);
-    });
-    m_server.on("/save_debounce", HTTP_GET, [&]() {
-        addCors(m_server);
-        m_server.send(200, "application/json", String(m_saveDebounceTimeMs));
-    });
-    m_server.on("/save_debounce", HTTP_OPTIONS, handleOptions);
 
     m_server.on("/config/led", HTTP_POST, [&]() {
         addCors(m_server);
@@ -215,7 +235,6 @@ ConfigServer::ConfigServer() : m_server(80) {
             }
             s_config.ledConfig[i].pirMaskOff = static_cast<uint8_t>(constrain(value, 0, int(UINT8_MAX)));
         }
-        m_lastRequestTime = millis();
         sendWireData(m_server);
     });
     m_server.on("/config/led", HTTP_OPTIONS, handleOptions);
@@ -227,10 +246,11 @@ ConfigServer::ConfigServer() : m_server(80) {
             return;
         }
         s_config.timestamp = timestamp;
-        m_lastRequestTime = millis();
-        m_saveRequested = true;
-
         addCors(m_server);
+        if (!saveConfig()) {
+            m_server.send(500, "text/plain", "Save failed");
+            return;
+        }
         m_server.send(200);
     });
     m_server.on("/config/save", HTTP_OPTIONS, handleOptions);
@@ -324,19 +344,13 @@ void ConfigServer::onWiFiDisconnected() {
     m_ota.end();
 }
 
-void ConfigServer::handle(unsigned long now) {
+void ConfigServer::handle() {
     if (!m_initialized) {
         D_PRINTLN("ConfigServer lazy init from handle; explicit setup was not called");
         setup();
     }
-    if (m_saveRequested && (now - m_lastRequestTime >= m_saveDebounceTimeMs)) {
-        if (saveConfig()) {
-            m_configSaves++;
-        }
-        m_saveRequested = false;
-    }
 
-    // This has to come last since it may call millis (now has already been grabbed for this loop).
+    // This has to come last since handlers may call millis.
     MDNS.update();
     m_server.handleClient();
     m_ota.handle();

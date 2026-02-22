@@ -20,9 +20,9 @@ constexpr char WIRE_SCHEMA_JSON[] PROGMEM = R"json(
 {"name": "ledConfigs","arrayLen": 4,"sub": [
  {"name": "brightness", "size": 2, "type": "int"},
  {"name": "rampOnMs", "size": 2, "type": "int"},
- {"name": "holdOnMs", "size": 4, "type": "int"},
+ {"name": "holdOnMs", "size": 4, "type": "uint"},
  {"name": "rampOffMs", "size": 2, "type": "int"},
- {"name": "waitOnMs", "size": 4, "type": "int"},
+ {"name": "waitOnMs", "size": 4, "type": "uint"},
  {"name": "pirMaskOn", "size": 1, "type": "uint"},
  {"name": "pirMaskOff", "size": 1, "type": "uint"}
 ]},

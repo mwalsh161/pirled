@@ -5,14 +5,17 @@
 #include <cstring>
 #include <random>
 
+#include "Logger.h"
 #include "debug.h"
 
-#define WIFI_TIMEOUT_MS 20000
-#define WARM_RETRY_INTERVAL_MS 3000
-#define COLD_RETRY_INITIAL_BACKOFF_MS 2000
+#define WARM_RETRY_INTERVAL_MS 8000
+#define COLD_RETRY_INITIAL_BACKOFF_MS 10000
 #define COLD_RETRY_MAX_BACKOFF_MS 300000  // 5 minutes
 #define WARM_RETRY_COUNT 3
 #define BACKOFF_JITTER_RATIO 0.1  // 10% jitter
+#define AUTO_RESEED_AFTER_COLD_RETRIES 3
+// With current backoff progression, ~20 cold retries is roughly 1 hour disconnected.
+#define MAX_COLD_RETRY_ATTEMPTS_BEFORE_REBOOT 20
 
 class WiFiManager {
    public:
@@ -65,6 +68,7 @@ class WiFiManager {
                     m_state = WIFI_CONNECTED;
                     m_warmRetryCount = 0;
                     m_coldRetryBackoff = COLD_RETRY_INITIAL_BACKOFF_MS;
+                    m_coldRetryAttempts = 0;
                     notifyConnected(ip);
                 }
                 return true;
@@ -104,7 +108,9 @@ class WiFiManager {
 
             case WIFI_COLD_RETRY:
                 D_PRINTLN("WiFi: Attempting cold retry");
-                powerCycleAndConnect();
+                if (!attemptColdRetryOrReboot()) {
+                    break;
+                }
                 m_state = WIFI_BACKOFF;
                 m_lastRetryTime = now;
                 break;
@@ -115,7 +121,9 @@ class WiFiManager {
                         "WiFi: Backoff complete, attempting cold retry (next backoff: %lu "
                         "ms)\n",
                         m_coldRetryBackoff);
-                    powerCycleAndConnect();
+                    if (!attemptColdRetryOrReboot()) {
+                        break;
+                    }
 
                     // Update backoff for next time (exponential with ceiling and jitter)
                     unsigned long newBackoff =
@@ -143,6 +151,8 @@ class WiFiManager {
     int m_warmRetryCount = 0;
     unsigned long m_coldRetryBackoff = COLD_RETRY_INITIAL_BACKOFF_MS;
     unsigned long m_lastRetryTime = 0;
+    uint8_t m_coldRetryAttempts = 0;
+    bool m_autoReseedAttempted = false;
 
     bool powerCycleAndConnect() {
         station_config conf;
@@ -156,11 +166,64 @@ class WiFiManager {
             password_len == sizeof(conf.password))
             return false;
 
+        WiFi.mode(WIFI_OFF);
+        delay(100);
         WiFi.mode(WIFI_STA);
         D_PRINTF("Calling WiFi.begin(\"%s\", \"%c**%c\")\n", ssid, password[0],
                  password[password_len - 1]);
         WiFi.begin(ssid, password);
         WiFi.status();
+        return true;
+    }
+
+    bool attemptColdRetryOrReboot() {
+        m_coldRetryAttempts++;
+        D_PRINTF("WiFi: Cold retry attempt %u/%u\n", m_coldRetryAttempts,
+                 MAX_COLD_RETRY_ATTEMPTS_BEFORE_REBOOT);
+
+        if (!m_autoReseedAttempted && m_coldRetryAttempts >= AUTO_RESEED_AFTER_COLD_RETRIES) {
+            m_autoReseedAttempted = true;
+            log("wa,1");  // auto-reseed trigger
+            D_PRINTLN("WiFi: Auto-reseed trigger");
+            attemptAutoReseed();
+        }
+
+        if (m_coldRetryAttempts >= MAX_COLD_RETRY_ATTEMPTS_BEFORE_REBOOT) {
+            D_PRINTF("WiFi: Cold retries exceeded (%u), rebooting\n", m_coldRetryAttempts);
+            ESP.restart();
+            return false;
+        }
+
+        return powerCycleAndConnect();
+    }
+
+    bool attemptAutoReseed() {
+        station_config conf;
+        if (!wifi_station_get_config(&conf)) {
+            log("wa,2");  // auto-reseed read failed
+            return false;
+        }
+
+        size_t ssid_len = strnlen((char*)conf.ssid, sizeof(conf.ssid));
+        size_t password_len = strnlen((char*)conf.password, sizeof(conf.password));
+        if (ssid_len == 0 || ssid_len == sizeof(conf.ssid) || password_len == 0 ||
+            password_len == sizeof(conf.password)) {
+            log("wa,3");  // auto-reseed invalid creds
+            return false;
+        }
+
+        char ssid[33] = "";
+        char password[65] = "";
+        memcpy(ssid, conf.ssid, ssid_len);
+        ssid[ssid_len] = '\0';
+        memcpy(password, conf.password, password_len);
+        password[password_len] = '\0';
+
+        WiFi.mode(WIFI_STA);
+        WiFi.persistent(true);
+        WiFi.begin(ssid, password);
+        WiFi.persistent(false);
+        log("wa,4");  // auto-reseed attempted (no reboot)
         return true;
     }
 

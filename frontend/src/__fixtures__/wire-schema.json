@@ -1,0 +1,26 @@
+[
+  {"name": "timestamp", "size": 8, "type": "int"},
+  {"name": "pirState", "size": 1, "type": "uint"},
+  {"name": "pirOverride", "size": 1, "type": "uint"},
+  {
+    "name": "ledConfigs",
+    "arrayLen": 4,
+    "sub": [
+      {"name": "brightness", "size": 2, "type": "int"},
+      {"name": "rampOnMs", "size": 2, "type": "int"},
+      {"name": "holdOnMs", "size": 4, "type": "uint"},
+      {"name": "rampOffMs", "size": 2, "type": "int"},
+      {"name": "waitOnMs", "size": 4, "type": "uint"},
+      {"name": "pirMaskOn", "size": 1, "type": "uint"},
+      {"name": "pirMaskOff", "size": 1, "type": "uint"}
+    ]
+  },
+  {
+    "name": "ledStates",
+    "arrayLen": 4,
+    "sub": [
+      {"name": "brightness", "size": 2, "type": "int"},
+      {"name": "state", "size": 1, "type": "uint"}
+    ]
+  }
+]
