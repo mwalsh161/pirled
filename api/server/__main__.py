@@ -2,7 +2,7 @@ import sys
 
 import uvicorn
 
-from ._server import app
+from .app import app
 
 
 def main() -> None:

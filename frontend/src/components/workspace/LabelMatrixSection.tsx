@@ -64,9 +64,6 @@ export default function LabelMatrixSection({
                     />
                     {deviceDisplayName}
                   </h4>
-                  <p className="text-xs text-gray-500">
-                    {device.resolved ? 'Address resolved' : 'Address unresolved'}
-                  </p>
                 </div>
                 <button
                   type="button"
