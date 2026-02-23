@@ -321,6 +321,12 @@ export function useLogicalWorkspace() {
             }
             return next;
           });
+          setDevices((previous) =>
+            previous.map((device) => ({
+              ...device,
+              resolved: resolvedByName.has(device.name),
+            }))
+          );
         } catch {
           // Keep working with known devices even if address resolution fails.
         }

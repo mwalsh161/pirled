@@ -60,7 +60,7 @@ export default function LabelMatrixSection({
                   <h4 className="flex items-center gap-2 font-semibold text-gray-900">
                     <span
                       className={`h-2 w-2 rounded-full transition-colors ${
-                        hasUnsavedLabels ? 'bg-amber-500' : 'bg-gray-300'
+                        device.resolved ? 'bg-emerald-500' : 'bg-gray-300'
                       }`}
                     />
                     {deviceDisplayName}
