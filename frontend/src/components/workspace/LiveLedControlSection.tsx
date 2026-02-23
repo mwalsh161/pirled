@@ -3,12 +3,12 @@ import DeviceHealthStrip from './live/DeviceHealthStrip';
 import LogicalEndpointSections from './live/LogicalEndpointSections';
 import { useLiveLedTransport } from '../../live/useLiveLedTransport';
 import { type LedEndpoint, type LogicalGroup } from '../../logical/types';
-import { type Device } from '../../types';
+import { type ResolvedDevice } from '../../types';
 
 const POLL_INTERVAL_MS = 750;
 
 interface LiveLedControlSectionProps {
-  devices: Device[];
+  devices: ResolvedDevice[];
   endpoints: LedEndpoint[];
   groups: LogicalGroup[];
   pirLabelsByDeviceUri: Record<string, string[]>;
@@ -29,6 +29,7 @@ export default function LiveLedControlSection({ devices, endpoints, groups, pirL
     resetEndpoint,
     persistDevice,
     refreshAllDevices,
+    retryDevice,
   } = useLiveLedTransport({
     devices,
     endpoints,
@@ -81,7 +82,7 @@ export default function LiveLedControlSection({ devices, endpoints, groups, pirL
 
       {devices.length === 0 ? (
         <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-4 text-sm text-slate-600">
-          No devices discovered yet.
+          No resolved devices available yet. Discover devices and retry resolution.
         </div>
       ) : (
         <div className="space-y-6">
@@ -91,6 +92,9 @@ export default function LiveLedControlSection({ devices, endpoints, groups, pirL
             persistingByDeviceUri={persistingByDeviceUri}
             onPersistDevice={(device) => {
               void persistDevice(device);
+            }}
+            onRetryDevice={(device) => {
+              void retryDevice(device);
             }}
           />
           <LogicalEndpointSections

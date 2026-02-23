@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { fetchDeviceSnapshot, saveDeviceConfig, setLedConfig } from '../api';
-import { type Device, type DeviceSnapshot, type LedConfig, type LedConfigUpdate } from '../types';
+import { type DeviceSnapshot, type LedConfig, type LedConfigUpdate, type ResolvedDevice } from '../types';
 import { toDeviceUri, type LedEndpoint } from '../logical/types';
 import { useStaggeredDevicePolling } from './useStaggeredDevicePolling';
 
 const UPDATE_DEBOUNCE_MS = 120;
+const OFFLINE_POLL_FAILURE_THRESHOLD = 2;
 
 const CONFIG_FIELDS: Array<keyof LedConfig> = [
   'brightness',
@@ -26,7 +27,7 @@ interface PendingLedUpdate {
 export interface DeviceLiveHealth {
   deviceName: string;
   deviceUri: string;
-  tone: 'idle' | 'ok' | 'error' | 'working';
+  tone: 'idle' | 'ok' | 'error' | 'working' | 'offline';
   queueDepth: number;
   inFlight: boolean;
   lastSuccessAt?: number;
@@ -34,7 +35,7 @@ export interface DeviceLiveHealth {
 }
 
 interface UseLiveLedTransportInput {
-  devices: Device[];
+  devices: ResolvedDevice[];
   endpoints: LedEndpoint[];
   autoRefreshEnabled: boolean;
   pollIntervalMs: number;
@@ -42,6 +43,7 @@ interface UseLiveLedTransportInput {
 
 interface RefreshOptions {
   silent?: boolean;
+  fromAutoPoll?: boolean;
 }
 
 function mergeLedConfig(config: LedConfig, patch: LedConfigUpdate): LedConfig {
@@ -147,6 +149,7 @@ export function useLiveLedTransport({
   const [pendingByEndpointId, setPendingByEndpointId] = useState<Record<string, boolean>>({});
   const [deviceHealthByUri, setDeviceHealthByUri] = useState<Record<string, DeviceLiveHealth>>({});
   const [persistingByDeviceUri, setPersistingByDeviceUri] = useState<Record<string, boolean>>({});
+  const [pollingSuppressedByDeviceUri, setPollingSuppressedByDeviceUri] = useState<Record<string, boolean>>({});
 
   const snapshotsByDeviceRef = useRef<Record<string, DeviceSnapshot>>({});
   const endpointByIdRef = useRef<Map<string, LedEndpoint>>(new Map());
@@ -158,6 +161,8 @@ export function useLiveLedTransport({
   const isFlushingByDeviceRef = useRef<Record<string, boolean>>({});
   const persistingByDeviceRef = useRef<Record<string, boolean>>({});
   const revisionByEndpointRef = useRef<Record<string, number>>({});
+  const pollingSuppressedByDeviceRef = useRef<Record<string, boolean>>({});
+  const pollFailuresByDeviceRef = useRef<Record<string, number>>({});
 
   useEffect(() => {
     endpointByIdRef.current = new Map(endpoints.map((endpoint) => [endpoint.id, endpoint]));
@@ -221,6 +226,22 @@ export function useLiveLedTransport({
     setPersistingByDeviceUri(next);
   }, []);
 
+  const setDevicePollingSuppressed = useCallback((deviceUri: string, suppressed: boolean) => {
+    const previous = pollingSuppressedByDeviceRef.current[deviceUri] ?? false;
+    if (previous === suppressed) {
+      return;
+    }
+
+    const next = { ...pollingSuppressedByDeviceRef.current };
+    if (suppressed) {
+      next[deviceUri] = true;
+    } else {
+      delete next[deviceUri];
+    }
+    pollingSuppressedByDeviceRef.current = next;
+    setPollingSuppressedByDeviceUri(next);
+  }, []);
+
   const updateDeviceQueueDepth = useCallback((deviceUri: string) => {
     const queueDepth = pendingByDeviceRef.current[deviceUri]?.size ?? 0;
     setDeviceHealthByUri((previous) => {
@@ -239,8 +260,11 @@ export function useLiveLedTransport({
   }, []);
 
   const refreshDevice = useCallback(
-    async (device: Device, options: RefreshOptions = {}) => {
+    async (device: ResolvedDevice, options: RefreshOptions = {}) => {
       const deviceUri = toDeviceUri(device);
+      if (options.fromAutoPoll && pollingSuppressedByDeviceRef.current[deviceUri]) {
+        return;
+      }
       if (pollInFlightByDeviceRef.current[deviceUri]) {
         return;
       }
@@ -312,7 +336,16 @@ export function useLiveLedTransport({
             },
           };
         });
+        pollFailuresByDeviceRef.current[deviceUri] = 0;
+        setDevicePollingSuppressed(deviceUri, false);
       } catch (error) {
+        const failureCount = (pollFailuresByDeviceRef.current[deviceUri] ?? 0) + 1;
+        pollFailuresByDeviceRef.current[deviceUri] = failureCount;
+        const isOffline = failureCount >= OFFLINE_POLL_FAILURE_THRESHOLD;
+        if (isOffline) {
+          setDevicePollingSuppressed(deviceUri, true);
+        }
+
         setDeviceHealthByUri((previous) => {
           const existing = previous[deviceUri];
           if (!existing) {
@@ -322,7 +355,7 @@ export function useLiveLedTransport({
             ...previous,
             [deviceUri]: {
               ...existing,
-              tone: 'error',
+              tone: isOffline ? 'offline' : 'error',
               inFlight: false,
               lastError: toErrorMessage(error),
             },
@@ -332,7 +365,7 @@ export function useLiveLedTransport({
         pollInFlightByDeviceRef.current[deviceUri] = false;
       }
     },
-    [endpoints]
+    [endpoints, setDevicePollingSuppressed]
   );
 
   const flushDeviceQueue = useCallback(
@@ -389,11 +422,12 @@ export function useLiveLedTransport({
                 if (!existing) {
                   return previous;
                 }
+                const isOffline = pollingSuppressedByDeviceRef.current[deviceUri] ?? false;
                 return {
                   ...previous,
                   [deviceUri]: {
                     ...existing,
-                    tone: 'error',
+                    tone: isOffline ? 'offline' : 'error',
                     lastError: `LED ${update.ledIndex}: ${toErrorMessage(error)}`,
                   },
                 };
@@ -415,12 +449,13 @@ export function useLiveLedTransport({
           if (!existing) {
             return previous;
           }
+          const isOffline = pollingSuppressedByDeviceRef.current[deviceUri] ?? false;
           return {
             ...previous,
             [deviceUri]: {
               ...existing,
               inFlight: false,
-              tone: existing.tone === 'error' ? 'error' : 'ok',
+              tone: isOffline ? 'offline' : existing.tone === 'error' ? 'error' : 'ok',
             },
           };
         });
@@ -462,7 +497,7 @@ export function useLiveLedTransport({
   );
 
   const persistDevice = useCallback(
-    async (device: Device) => {
+    async (device: ResolvedDevice) => {
       const deviceUri = toDeviceUri(device);
       if (persistingByDeviceRef.current[deviceUri]) {
         return;
@@ -512,11 +547,12 @@ export function useLiveLedTransport({
           if (!existing) {
             return previous;
           }
+          const isOffline = pollingSuppressedByDeviceRef.current[deviceUri] ?? false;
           return {
             ...previous,
             [deviceUri]: {
               ...existing,
-              tone: 'error',
+              tone: isOffline ? 'offline' : 'error',
               inFlight: false,
               lastError: `Save failed: ${toErrorMessage(error)}`,
             },
@@ -638,6 +674,16 @@ export function useLiveLedTransport({
     [devices, refreshDevice]
   );
 
+  const retryDevice = useCallback(
+    async (device: ResolvedDevice) => {
+      const deviceUri = toDeviceUri(device);
+      pollFailuresByDeviceRef.current[deviceUri] = 0;
+      setDevicePollingSuppressed(deviceUri, false);
+      await refreshDevice(device);
+    },
+    [refreshDevice, setDevicePollingSuppressed]
+  );
+
   useEffect(() => {
     const activeDeviceUris = new Set(devices.map((device) => toDeviceUri(device)));
     const activeEndpointIds = new Set(endpoints.map((endpoint) => endpoint.id));
@@ -682,6 +728,11 @@ export function useLiveLedTransport({
       persistingByDeviceRef.current = next;
       return next;
     });
+    setPollingSuppressedByDeviceUri((previous) => {
+      const next = filterRecordByKey(previous, (deviceUri) => activeDeviceUris.has(deviceUri));
+      pollingSuppressedByDeviceRef.current = next;
+      return next;
+    });
 
     for (const [deviceUri, queue] of Object.entries(pendingByDeviceRef.current)) {
       if (!activeDeviceUris.has(deviceUri)) {
@@ -692,6 +743,8 @@ export function useLiveLedTransport({
         delete pendingByDeviceRef.current[deviceUri];
         delete isFlushingByDeviceRef.current[deviceUri];
         delete pollInFlightByDeviceRef.current[deviceUri];
+        delete pollFailuresByDeviceRef.current[deviceUri];
+        delete pollingSuppressedByDeviceRef.current[deviceUri];
       } else {
         for (const [ledIndex, pendingUpdate] of queue.entries()) {
           const endpoint = endpointByIdRef.current.get(pendingUpdate.endpointId);
@@ -707,15 +760,20 @@ export function useLiveLedTransport({
     void refreshAllDevices();
   }, [devices, refreshAllDevices]);
 
+  const pollingDevices = useMemo(
+    () => devices.filter((device) => !pollingSuppressedByDeviceUri[toDeviceUri(device)]),
+    [devices, pollingSuppressedByDeviceUri]
+  );
+
   const pollDevice = useCallback(
-    async (device: Device) => {
-      await refreshDevice(device, { silent: true });
+    async (device: ResolvedDevice) => {
+      await refreshDevice(device, { silent: true, fromAutoPoll: true });
     },
     [refreshDevice]
   );
 
   useStaggeredDevicePolling({
-    devices,
+    devices: pollingDevices,
     enabled: autoRefreshEnabled,
     intervalMs: pollIntervalMs,
     staggerMs: Math.min(250, Math.max(50, Math.floor(pollIntervalMs / 4))),
@@ -745,5 +803,6 @@ export function useLiveLedTransport({
     resetEndpoint,
     persistDevice,
     refreshAllDevices,
+    retryDevice,
   };
 }

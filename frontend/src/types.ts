@@ -1,8 +1,17 @@
 // Device and configuration types
-export interface Device {
+export interface KnownDevice {
+  name: string;
+  alias: string;
+  fromConfig: boolean;
+  discovered: boolean;
+  resolved: boolean;
+}
+
+export interface ResolvedDevice {
+  name: string;
+  alias: string;
   host: string;
   port: number;
-  name: string;
 }
 
 // Complete LED config with all fields (as returned from device)
@@ -35,6 +44,7 @@ export interface MoodConfig {
 export interface DeviceLabelMetadata {
   ledNames: string[];
   ledByPir: number[];
+  alias: string;
 }
 
 export interface DeviceSnapshot {

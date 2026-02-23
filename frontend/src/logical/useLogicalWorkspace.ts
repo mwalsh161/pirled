@@ -4,22 +4,25 @@ import {
   createLogicalGroup,
   deleteLogicalGroup,
   deleteMoodConfig,
+  discoverDevices as discoverMdnsDevices,
   fetchDeviceSnapshot,
   getDeviceLabelMetadata,
   getDevices,
   getLogicalGroups,
   getMoodConfig,
   getMoodConfigs,
+  resolveDevices,
   saveDeviceLabelMetadata,
   saveMoodConfig,
 } from '../api';
 import {
   LED_COUNT,
   PHYSICAL_PIR_COUNT,
-  type Device,
   type DeviceLabelMetadata,
   type DeviceSnapshot,
+  type KnownDevice,
   type LedConfig,
+  type ResolvedDevice,
   isLedConfig,
 } from '../types';
 import {
@@ -52,10 +55,18 @@ interface RefreshGroupsOptions {
   suppressStatus?: boolean;
 }
 
+interface RefreshDevicesOptions {
+  discover?: boolean;
+}
+
 const DEFAULT_PIR_ASSIGNMENT = [0, 1, 2, 3] as const;
 
 function normalizeLabel(label: string): string {
   return label.trim();
+}
+
+function normalizeAlias(alias: string): string {
+  return alias.trim();
 }
 
 function parseAssignmentsByLabel(payload: PersistedMoodPayload): Record<string, LedConfig> {
@@ -78,14 +89,22 @@ function toMoodSummary(config: { name: string; description?: string; timestamp?:
   return summary;
 }
 
-function buildEndpoints(devices: Device[], labelsByEndpoint: Record<string, string>): LedEndpoint[] {
+function buildEndpoints(
+  devices: KnownDevice[],
+  resolvedDevicesByName: Record<string, ResolvedDevice>,
+  labelsByEndpoint: Record<string, string>
+): LedEndpoint[] {
   return devices.flatMap((device) => {
-    const deviceUri = toDeviceUri(device);
+    const resolvedDevice = resolvedDevicesByName[device.name];
+    const deviceUri = resolvedDevice ? toDeviceUri(resolvedDevice) : '';
+    const trimmedAlias = device.alias.trim();
+    const deviceDisplayName = trimmedAlias.length > 0 ? trimmedAlias : device.name;
     return Array.from({ length: LED_COUNT }, (_, ledIndex) => {
-      const id = endpointId(deviceUri, ledIndex);
+      const id = endpointId(device.name, ledIndex);
       return {
         id,
         deviceName: device.name,
+        deviceDisplayName,
         deviceUri,
         ledIndex,
         label: labelsByEndpoint[id] ?? '',
@@ -138,7 +157,10 @@ function arePirAssignmentsEqual(left: number[], right: number[]): boolean {
 }
 
 export function useLogicalWorkspace() {
-  const [devices, setDevices] = useState<Device[]>([]);
+  const [devices, setDevices] = useState<KnownDevice[]>([]);
+  const [resolvedDevicesByName, setResolvedDevicesByName] = useState<Record<string, ResolvedDevice>>({});
+  const [aliasesByDevice, setAliasesByDevice] = useState<Record<string, string>>({});
+  const [persistedAliasesByDevice, setPersistedAliasesByDevice] = useState<Record<string, string>>({});
   const [labelsByEndpoint, setLabelsByEndpoint] = useState<Record<string, string>>({});
   const [persistedLabelsByEndpoint, setPersistedLabelsByEndpoint] = useState<Record<string, string>>({});
   const [pirAssignmentsByDevice, setPirAssignmentsByDevice] = useState<Record<string, number[]>>({});
@@ -154,15 +176,24 @@ export function useLogicalWorkspace() {
   const groupRequestTokenRef = useRef(0);
   const deviceAbortControllerRef = useRef<AbortController | null>(null);
 
-  const endpoints = buildEndpoints(devices, labelsByEndpoint);
+  const endpoints = buildEndpoints(devices, resolvedDevicesByName, labelsByEndpoint);
+  const resolvedDevices = useMemo<ResolvedDevice[]>(() => {
+    const next: ResolvedDevice[] = [];
+    for (const device of devices) {
+      const resolved = resolvedDevicesByName[device.name];
+      if (resolved) {
+        next.push(resolved);
+      }
+    }
+    return next;
+  }, [devices, resolvedDevicesByName]);
   const labels = buildLabels(endpoints);
   const dirtyLabelDevices = useMemo<Record<string, boolean>>(() => {
     const dirty: Record<string, boolean> = {};
     for (const device of devices) {
-      const deviceUri = toDeviceUri(device);
       let labelsDirty = false;
       for (let ledIndex = 0; ledIndex < LED_COUNT; ledIndex += 1) {
-        const id = endpointId(deviceUri, ledIndex);
+        const id = endpointId(device.name, ledIndex);
         const current = normalizeLabel(labelsByEndpoint[id] ?? '');
         const persisted = normalizeLabel(persistedLabelsByEndpoint[id] ?? '');
         if (current !== persisted) {
@@ -174,13 +205,16 @@ export function useLogicalWorkspace() {
       const currentPirAssignment = normalizePirAssignment(pirAssignmentsByDevice[device.name]);
       const persistedPirAssignment = normalizePirAssignment(persistedPirAssignmentsByDevice[device.name]);
       const pirDirty = !arePirAssignmentsEqual(currentPirAssignment, persistedPirAssignment);
+      const currentAlias = normalizeAlias(aliasesByDevice[device.name] ?? '');
+      const persistedAlias = normalizeAlias(persistedAliasesByDevice[device.name] ?? '');
+      const aliasDirty = currentAlias !== persistedAlias;
 
-      if (labelsDirty || pirDirty) {
+      if (labelsDirty || pirDirty || aliasDirty) {
         dirty[device.name] = true;
       }
     }
     return dirty;
-  }, [devices, labelsByEndpoint, persistedLabelsByEndpoint, pirAssignmentsByDevice, persistedPirAssignmentsByDevice]);
+  }, [aliasesByDevice, devices, labelsByEndpoint, persistedAliasesByDevice, persistedLabelsByEndpoint, pirAssignmentsByDevice, persistedPirAssignmentsByDevice]);
   const dirtyLabelDeviceCount = Object.keys(dirtyLabelDevices).length;
   const hasUnsavedLabelChanges = dirtyLabelDeviceCount > 0;
 
@@ -202,37 +236,46 @@ export function useLogicalWorkspace() {
     }
   }, []);
 
-  const refreshDevices = useCallback(async () => {
+  const refreshDevices = useCallback(async (options: RefreshDevicesOptions = {}) => {
     const requestToken = deviceRequestTokenRef.current + 1;
     deviceRequestTokenRef.current = requestToken;
     deviceAbortControllerRef.current?.abort();
 
     const controller = new AbortController();
     deviceAbortControllerRef.current = controller;
-    const statusToken = startStatus('Discovering devices and loading labels...');
+    const statusToken = startStatus(
+      options.discover ? 'Discovering new devices and loading labels...' : 'Loading known devices and labels...'
+    );
 
     try {
-      const discovered = await getDevices(controller.signal);
-      const sorted = [...discovered].sort((left, right) => left.name.localeCompare(right.name));
+      if (options.discover) {
+        await discoverMdnsDevices(controller.signal);
+      }
+
+      const knownDevices = await getDevices(controller.signal);
+      const sorted = [...knownDevices].sort((left, right) => left.name.localeCompare(right.name));
       const nextLabels: Record<string, string> = {};
       const nextPirAssignments: Record<string, number[]> = {};
+      const nextAliases: Record<string, string> = {};
 
       await Promise.all(
         sorted.map(async (device) => {
-          const deviceUri = toDeviceUri(device);
           let metadata: DeviceLabelMetadata = {
             ledNames: [],
             ledByPir: [],
+            alias: device.alias,
           };
 
           try {
             metadata = await getDeviceLabelMetadata(device.name);
           } catch {
-            metadata = { ledNames: [], ledByPir: [] };
+            metadata = { ledNames: [], ledByPir: [], alias: device.alias };
           }
 
+          nextAliases[device.name] = metadata.alias;
+
           for (let ledIndex = 0; ledIndex < LED_COUNT; ledIndex += 1) {
-            const id = endpointId(deviceUri, ledIndex);
+            const id = endpointId(device.name, ledIndex);
             const storedLabel = normalizeLabel(metadata.ledNames[ledIndex] ?? '');
             nextLabels[id] = storedLabel;
           }
@@ -250,17 +293,44 @@ export function useLogicalWorkspace() {
       }
 
       setDevices(sorted);
+      setResolvedDevicesByName({});
+      setAliasesByDevice(nextAliases);
+      setPersistedAliasesByDevice(nextAliases);
       setLabelsByEndpoint(nextLabels);
       setPersistedLabelsByEndpoint(nextLabels);
       setPirAssignmentsByDevice(nextPirAssignments);
       setPersistedPirAssignmentsByDevice(nextPirAssignments);
-      settleStatus(statusToken, { tone: 'success', message: `Loaded ${sorted.length} devices.` });
+      settleStatus(statusToken, { tone: 'success', message: `Loaded ${sorted.length} known devices.` });
+
+      void (async () => {
+        try {
+          const resolvedDevices = await resolveDevices(controller.signal);
+          if (controller.signal.aborted || deviceRequestTokenRef.current !== requestToken) {
+            return;
+          }
+          const resolvedByName = new Map(
+            resolvedDevices.map((device) => [device.name, device] as const)
+          );
+          setResolvedDevicesByName(() => {
+            const next: Record<string, ResolvedDevice> = {};
+            for (const device of sorted) {
+              const resolved = resolvedByName.get(device.name);
+              if (resolved) {
+                next[device.name] = resolved;
+              }
+            }
+            return next;
+          });
+        } catch {
+          // Keep working with known devices even if address resolution fails.
+        }
+      })();
     } catch (error) {
       if (controller.signal.aborted || deviceRequestTokenRef.current !== requestToken) {
         return;
       }
 
-      const message = error instanceof Error ? error.message : 'Unknown discovery error';
+      const message = error instanceof Error ? error.message : 'Unknown device load error';
       settleStatus(statusToken, { tone: 'error', message: `Failed to load devices: ${message}` });
     } finally {
       if (deviceAbortControllerRef.current === controller) {
@@ -326,6 +396,10 @@ export function useLogicalWorkspace() {
     }
   }, [settleStatus, startStatus]);
 
+  const discoverDevices = useCallback(async () => {
+    await refreshDevices({ discover: true });
+  }, [refreshDevices]);
+
   async function loadMoodDetail(name: string): Promise<MoodDetail> {
     const cached = moodDetails[name];
     if (cached) {
@@ -360,26 +434,60 @@ export function useLogicalWorkspace() {
     }));
   }
 
+  function updateAlias(deviceName: string, alias: string): void {
+    setAliasesByDevice((previous) => ({
+      ...previous,
+      [deviceName]: alias,
+    }));
+    setDevices((previous) =>
+      previous.map((device) =>
+        device.name === deviceName
+          ? {
+              ...device,
+              alias,
+            }
+          : device
+      )
+    );
+    setResolvedDevicesByName((previous) => {
+      const current = previous[deviceName];
+      if (!current) {
+        return previous;
+      }
+      return {
+        ...previous,
+        [deviceName]: {
+          ...current,
+          alias,
+        },
+      };
+    });
+  }
+
   async function saveLabelsForDevice(deviceName: string): Promise<void> {
     const device = devices.find((entry) => entry.name === deviceName);
     if (!device) {
       return;
     }
 
-    const deviceUri = toDeviceUri(device);
     const ledNames = Array.from({ length: LED_COUNT }, (_, ledIndex) => {
-      return normalizeLabel(labelsByEndpoint[endpointId(deviceUri, ledIndex)] ?? '');
+      return normalizeLabel(labelsByEndpoint[endpointId(device.name, ledIndex)] ?? '');
     });
     const normalizedAssignment = normalizePirAssignment(pirAssignmentsByDevice[deviceName]);
+    const normalizedAlias = normalizeAlias(aliasesByDevice[deviceName] ?? '');
 
     const statusToken = startStatus(`Saving labels for ${deviceName}...`);
 
     try {
-      await saveDeviceLabelMetadata(deviceName, { ledNames, ledByPir: normalizedAssignment });
+      await saveDeviceLabelMetadata(deviceName, {
+        ledNames,
+        ledByPir: normalizedAssignment,
+        alias: normalizedAlias,
+      });
       setPersistedLabelsByEndpoint((previous) => {
         const next = { ...previous };
         for (let ledIndex = 0; ledIndex < LED_COUNT; ledIndex += 1) {
-          const id = endpointId(deviceUri, ledIndex);
+          const id = endpointId(device.name, ledIndex);
           next[id] = labelsByEndpoint[id] ?? '';
         }
         return next;
@@ -387,6 +495,10 @@ export function useLogicalWorkspace() {
       setPersistedPirAssignmentsByDevice((previous) => ({
         ...previous,
         [deviceName]: normalizedAssignment,
+      }));
+      setPersistedAliasesByDevice((previous) => ({
+        ...previous,
+        [deviceName]: normalizedAlias,
       }));
       settleStatus(statusToken, { tone: 'success', message: `Saved labels for ${deviceName}.` });
     } catch (error) {
@@ -499,9 +611,15 @@ export function useLogicalWorkspace() {
       }
       return true;
     });
+    const resolvedDeviceNameSet = new Set(Object.keys(resolvedDevicesByName));
+    const resolvedScopedEndpoints = scopedEndpoints.filter((endpoint) => resolvedDeviceNameSet.has(endpoint.deviceName));
 
     if (scopedEndpoints.length === 0) {
       setStatusImmediate({ tone: 'error', message: 'No labeled endpoints in the selected capture scope.' });
+      return;
+    }
+    if (resolvedScopedEndpoints.length === 0) {
+      setStatusImmediate({ tone: 'error', message: 'No resolved devices available in the selected capture scope.' });
       return;
     }
 
@@ -530,7 +648,7 @@ export function useLogicalWorkspace() {
 
     try {
       const snapshotEntries = await Promise.all(
-        Array.from(new Set(scopedEndpoints.map((endpoint) => endpoint.deviceUri))).map(async (deviceUri) => {
+        Array.from(new Set(resolvedScopedEndpoints.map((endpoint) => endpoint.deviceUri))).map(async (deviceUri) => {
           const snapshot = await fetchDeviceSnapshot(deviceUri);
           return [deviceUri, snapshot] as const;
         })
@@ -539,7 +657,7 @@ export function useLogicalWorkspace() {
       const assignmentsByLabel: Record<string, LedConfig> = {};
       const timestamp = Math.floor(Date.now() / 1000);
 
-      for (const endpoint of scopedEndpoints) {
+      for (const endpoint of resolvedScopedEndpoints) {
         const snapshot = snapshotsByDeviceUri[endpoint.deviceUri];
         if (!snapshot) {
           continue;
@@ -676,6 +794,8 @@ export function useLogicalWorkspace() {
 
   return {
     devices,
+    resolvedDevices,
+    aliasesByDevice,
     endpoints,
     pirAssignmentsByDevice,
     labels,
@@ -688,10 +808,12 @@ export function useLogicalWorkspace() {
     dirtyLabelDeviceCount,
     hasUnsavedLabelChanges,
     refreshDevices,
+    discoverDevices,
     refreshMoods,
     refreshGroups,
     loadMoodDetail,
     updateLabel,
+    updateAlias,
     assignDefaultPir,
     saveLabelsForDevice,
     createGroup,

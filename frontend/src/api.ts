@@ -2,7 +2,7 @@ import { BufferDeviceState, buildFieldMap } from './BufferDeviceState';
 import { type ApplyReport, type LogicalGroup } from './logical/types';
 import {
   LED_COUNT,
-  type Device,
+  type KnownDevice,
   PHYSICAL_PIR_COUNT,
   type DeviceLabelMetadata,
   type DeviceSnapshot,
@@ -10,6 +10,7 @@ import {
   type LedConfigUpdate,
   type MoodConfig,
   type MoodConfigSummary,
+  type ResolvedDevice,
   isLedConfig,
 } from './types';
 
@@ -37,12 +38,29 @@ function isNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value);
 }
 
-function isDevice(value: unknown): value is Device {
+function isBoolean(value: unknown): value is boolean {
+  return typeof value === 'boolean';
+}
+
+function isKnownDevice(value: unknown): value is KnownDevice {
+  if (!isRecord(value) || !isString(value.name)) {
+    return false;
+  }
+  return (
+    isString(value.alias) &&
+    isBoolean(value.fromConfig) &&
+    isBoolean(value.discovered) &&
+    isBoolean(value.resolved)
+  );
+}
+
+function isResolvedDevice(value: unknown): value is ResolvedDevice {
   return (
     isRecord(value) &&
+    isString(value.name) &&
+    isString(value.alias) &&
     isString(value.host) &&
-    Number.isInteger(value.port) &&
-    isString(value.name)
+    Number.isInteger(value.port)
   );
 }
 
@@ -138,7 +156,7 @@ function parseMoodConfig(payload: unknown): MoodConfig {
 }
 
 function parseDeviceLabelMetadata(payload: unknown): DeviceLabelMetadata {
-  if (!isRecord(payload) || !Array.isArray(payload.ledNames) || !Array.isArray(payload.ledByPir)) {
+  if (!isRecord(payload) || !Array.isArray(payload.ledNames) || !Array.isArray(payload.ledByPir) || !isString(payload.alias)) {
     throw new Error('Invalid device label metadata');
   }
   if (payload.ledNames.length !== LED_COUNT || payload.ledByPir.length !== PHYSICAL_PIR_COUNT) {
@@ -169,7 +187,7 @@ function parseDeviceLabelMetadata(payload: unknown): DeviceLabelMetadata {
     ledByPir.push(value);
   }
 
-  return { ledNames, ledByPir };
+  return { ledNames, ledByPir, alias: payload.alias };
 }
 
 function parseSchema(payload: unknown): SchemaField[] {
@@ -234,14 +252,57 @@ async function throwResponseError(response: Response, fallbackMessage: string): 
   throw new Error(message);
 }
 
-export async function getDevices(controller: AbortSignal): Promise<Device[]> {
+export async function getDevices(controller: AbortSignal): Promise<KnownDevice[]> {
   const response = await fetch(`${API_BASE}/devices`, { signal: controller });
   if (!response.ok) throw new Error('Failed to fetch devices');
   const payload: unknown = await response.json();
   if (!Array.isArray(payload)) {
-    return [];
+    throw new Error('Invalid devices payload');
   }
-  return payload.filter((candidate): candidate is Device => isDevice(candidate));
+  const devices: KnownDevice[] = [];
+  for (let index = 0; index < payload.length; index += 1) {
+    const candidate = payload[index];
+    if (!isKnownDevice(candidate)) {
+      throw new Error(`Invalid known device payload at index ${index}`);
+    }
+    devices.push({
+      name: candidate.name,
+      alias: candidate.alias,
+      fromConfig: candidate.fromConfig,
+      discovered: candidate.discovered,
+      resolved: candidate.resolved,
+    });
+  }
+  return devices;
+}
+
+export async function discoverDevices(controller: AbortSignal): Promise<void> {
+  const response = await fetch(`${API_BASE}/devices/discover`, {
+    method: 'POST',
+    signal: controller,
+  });
+  if (!response.ok) throw new Error('Failed to discover mDNS devices');
+}
+
+export async function resolveDevices(controller: AbortSignal): Promise<ResolvedDevice[]> {
+  const response = await fetch(`${API_BASE}/devices/resolve`, {
+    method: 'POST',
+    signal: controller,
+  });
+  if (!response.ok) throw new Error('Failed to resolve device IPs');
+  const payload: unknown = await response.json();
+  if (!isRecord(payload) || !Array.isArray(payload.resolved)) {
+    throw new Error('Invalid resolve response payload');
+  }
+  const devices: ResolvedDevice[] = [];
+  for (let index = 0; index < payload.resolved.length; index += 1) {
+    const candidate = payload.resolved[index];
+    if (!isResolvedDevice(candidate)) {
+      throw new Error(`Invalid resolved device payload at index ${index}`);
+    }
+    devices.push(candidate);
+  }
+  return devices;
 }
 
 export async function saveDeviceConfig(deviceUri: string, timestamp: number): Promise<void> {

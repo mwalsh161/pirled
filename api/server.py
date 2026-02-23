@@ -2,7 +2,6 @@ import json
 import pathlib
 import re
 import socket
-import subprocess
 import threading
 import time
 import uuid
@@ -36,39 +35,184 @@ LED_CONFIG_FIELDS: tuple[str, ...] = (
 # -----------------------------
 
 
-SERVICES: list[tuple[str, str]] = [
+MDNS_SERVICE_TYPE = "_http._tcp.local."
+DEVICE_NAME_PREFIX = "pirled-"
+
+DISCOVERED_SERVICES: set[tuple[str, str]] = {
     ("_http._tcp.local.", "pirled-7BF498._http._tcp.local."),
     ("_http._tcp.local.", "pirled-5EE086._http._tcp.local."),
-]  # For testing, pre-populate with a known device.
+}  # For testing, pre-populate with known devices.
+SERVICE_BY_DEVICE_NAME: dict[str, tuple[str, str]] = {}
+RESOLVED_DEVICE_BY_NAME: dict[str, dict[str, object]] = {}
+DISCOVERY_STATE_LOCK = threading.Lock()
+MDNS_BROWSER: ServiceBrowser | None = None
+
+
+def device_name_from_service_name(service_name: str) -> str:
+    return service_name.split(".", maxsplit=1)[0]
+
+
+def register_discovered_service(type_: str, service_name: str) -> str | None:
+    if not service_name.startswith(DEVICE_NAME_PREFIX):
+        return None
+    device_name = device_name_from_service_name(service_name)
+    with DISCOVERY_STATE_LOCK:
+        DISCOVERED_SERVICES.add((type_, service_name))
+        SERVICE_BY_DEVICE_NAME[device_name] = (type_, service_name)
+    return device_name
+
+
+def unregister_discovered_service(type_: str, service_name: str) -> None:
+    device_name = device_name_from_service_name(service_name)
+    with DISCOVERY_STATE_LOCK:
+        DISCOVERED_SERVICES.discard((type_, service_name))
+        mapped_service = SERVICE_BY_DEVICE_NAME.get(device_name)
+        if mapped_service == (type_, service_name):
+            del SERVICE_BY_DEVICE_NAME[device_name]
+            RESOLVED_DEVICE_BY_NAME.pop(device_name, None)
+
+
+def sync_device_name_index_from_discovery() -> list[str]:
+    with DISCOVERY_STATE_LOCK:
+        service_snapshot = sorted(DISCOVERED_SERVICES)
+
+    discovered_names: set[str] = set()
+    for type_, service_name in service_snapshot:
+        registered_name = register_discovered_service(type_, service_name)
+        if registered_name is not None:
+            discovered_names.add(registered_name)
+    return sorted(discovered_names)
+
+
+def pick_host_address(type_: str, service_name: str) -> tuple[str | None, int | None, str | None]:
+    info = zc.get_service_info(type_, service_name)
+    if info is None:
+        return None, None, "No mDNS service info"
+    if not info.port:
+        return None, None, "mDNS service missing port"
+
+    addresses = info.parsed_addresses()
+    for address in addresses:
+        if ":" not in address:
+            return address, int(info.port), None
+
+    if info.server:
+        try:
+            return socket.gethostbyname(info.server), int(info.port), None
+        except socket.gaierror:
+            pass
+
+    return None, None, "No IPv4 address found"
+
+
+def resolve_device_name(device_name: str) -> tuple[dict[str, object] | None, str | None]:
+    with DISCOVERY_STATE_LOCK:
+        service = SERVICE_BY_DEVICE_NAME.get(device_name)
+
+    if service is None:
+        with DISCOVERY_STATE_LOCK:
+            RESOLVED_DEVICE_BY_NAME.pop(device_name, None)
+        return None, "No discovered mDNS service"
+
+    type_, service_name = service
+    host, port, error = pick_host_address(type_, service_name)
+    if error is not None or host is None or port is None:
+        with DISCOVERY_STATE_LOCK:
+            RESOLVED_DEVICE_BY_NAME.pop(device_name, None)
+        return None, error or "Unknown resolve error"
+
+    payload: dict[str, object] = {"name": device_name, "host": host, "port": port}
+    with DISCOVERY_STATE_LOCK:
+        RESOLVED_DEVICE_BY_NAME[device_name] = payload
+    return payload, None
+
+
+def resolve_devices_now() -> tuple[list[dict[str, object]], list[dict[str, str]]]:
+    with DISCOVERY_STATE_LOCK:
+        target_names = sorted(SERVICE_BY_DEVICE_NAME.keys())
+    resolved: list[dict[str, object]] = []
+    failed: list[dict[str, str]] = []
+    for device_name in target_names:
+        payload, error = resolve_device_name(device_name)
+        if payload is not None:
+            resolved.append(payload)
+        else:
+            failed.append({"name": device_name, "error": error or "Resolve failed"})
+    return resolved, failed
+
+
+def list_resolved_devices() -> list[dict[str, object]]:
+    metadata = load_metadata()
+    with DISCOVERY_STATE_LOCK:
+        resolved_snapshot = [dict(entry) for entry in RESOLVED_DEVICE_BY_NAME.values()]
+    resolved_payload: list[dict[str, object]] = []
+    for device in resolved_snapshot:
+        device_name = device.get("name")
+        host = device.get("host")
+        port = device.get("port")
+        if not isinstance(device_name, str) or not isinstance(host, str) or not isinstance(
+            port, int
+        ):
+            continue
+        alias = metadata_alias_value(metadata, device_name)
+        resolved_payload.append(
+            {
+                "name": device_name,
+                "alias": alias,
+                "host": host,
+                "port": port,
+            }
+        )
+    return sorted(
+        resolved_payload,
+        key=lambda device: str(device.get("name", "")).lower(),
+    )
+
+
+def list_known_devices() -> list[dict[str, object]]:
+    metadata = load_metadata()
+    config_device_names = {
+        key for key in metadata.keys() if isinstance(key, str) and key.strip()
+    }
+    with DISCOVERY_STATE_LOCK:
+        discovered_device_names = set(SERVICE_BY_DEVICE_NAME.keys())
+        resolved_snapshot = {name: dict(payload) for name, payload in RESOLVED_DEVICE_BY_NAME.items()}
+
+    known_device_names = sorted(config_device_names | discovered_device_names)
+    payload: list[dict[str, object]] = []
+    for device_name in known_device_names:
+        row: dict[str, object] = {
+            "name": device_name,
+            "alias": metadata_alias_value(metadata, device_name),
+            "fromConfig": device_name in config_device_names,
+            "discovered": device_name in discovered_device_names,
+            "resolved": device_name in resolved_snapshot,
+        }
+        payload.append(row)
+    return payload
 
 
 class MDNSListener(ServiceListener):
     def add_service(self, zc: Zeroconf, type_: str, name: str) -> None:
-        if not name.startswith("pirled-") or (type_, name) in SERVICES:
-            return
-        SERVICES.append((type_, name))
+        register_discovered_service(type_, name)
 
-    def remove_service(self, zc, type_, name):
-        pass
+    def remove_service(self, zc: Zeroconf, type_: str, name: str) -> None:
+        unregister_discovered_service(type_, name)
 
-    def update_service(self, zc, type_, name):
-        pass
+    def update_service(self, zc: Zeroconf, type_: str, name: str) -> None:
+        register_discovered_service(type_, name)
 
 
 zc = Zeroconf()
 
 
-def start_mdns():
-    ServiceBrowser(zc, "_http._tcp.local.", MDNSListener())
+def start_mdns() -> None:
+    global MDNS_BROWSER
+    MDNS_BROWSER = ServiceBrowser(zc, MDNS_SERVICE_TYPE, MDNSListener())
 
 
 threading.Thread(target=start_mdns, daemon=True).start()
-
-
-def ping(ip: str) -> str:
-    if (ret := subprocess.call(("ping", "-c", "1", ip))) != 0:
-        raise socket.gaierror(f"Ping failed: {ret}")
-    return ip
+sync_device_name_index_from_discovery()
 
 
 # -----------------------------
@@ -76,34 +220,29 @@ def ping(ip: str) -> str:
 # -----------------------------
 
 
-def discover_devices() -> list[dict]:
-    devs = []
-    failed = []
-
-    # Go through and resolve hostname + ping (remove failed ones).
-    # JS app is chatty, so it should only use IP.
-    for type_, name in SERVICES:
-        info = zc.get_service_info(type_, name)
-        if info and info.server and info.port:
-            try:
-                ip = ping(socket.gethostbyname(info.server))
-                # Strip the mDNS suffix (e.g., "._http._tcp.local.") from the name
-                # NOTE, this looks like the hostname but technically isn't (see firmware).
-                device_name = name.split(".", maxsplit=1)[0]
-                devs.append({"host": ip, "port": info.port, "name": device_name})
-            except socket.gaierror:  # Failed to resolve.
-                failed.append((type_, name))
-                continue
-
-    for failure in failed:
-        SERVICES.remove(failure)
-
-    return devs
-
-
 @app.get("/api/devices")
 def get_devices():
-    return JSONResponse(discover_devices())
+    return JSONResponse(list_known_devices())
+
+
+@app.post("/api/devices/discover")
+def discover_devices():
+    discovered_names = sync_device_name_index_from_discovery()
+    return JSONResponse({"status": "ok", "discovered": discovered_names})
+
+
+@app.post("/api/devices/resolve")
+def resolve_devices():
+    _, failed = resolve_devices_now()
+    resolved = list_resolved_devices()
+    return JSONResponse(
+        {
+            "status": "ok",
+            "requestedCount": len(resolved) + len(failed),
+            "resolved": resolved,
+            "failed": failed,
+        }
+    )
 
 
 # -----------------------------
@@ -125,6 +264,19 @@ def clean_config_name(name: str) -> str:
 
 def normalize_label(label: str) -> str:
     return label.strip()
+
+
+def normalize_alias(alias: str) -> str:
+    return alias.strip()
+
+
+def metadata_alias_value(metadata: dict, device_name: str) -> str:
+    raw_value = metadata.get(device_name)
+    if isinstance(raw_value, dict):
+        alias_value = raw_value.get("alias")
+        if isinstance(alias_value, str):
+            return normalize_alias(alias_value)
+    return ""
 
 
 def clean_led_label(label: str) -> str:
@@ -150,10 +302,11 @@ def default_device_label_metadata(device_name: str) -> dict:
     return {
         "ledNames": ["" for _ in range(LED_COUNT)],
         "ledByPir": [pir_index for pir_index in range(PIR_COUNT)],
+        "alias": "",
     }
 
 
-def parse_device_label_metadata_payload(data: dict) -> tuple[list[str], list[int]]:
+def parse_device_label_metadata_payload(data: dict) -> tuple[list[str], list[int], str]:
     if "ledNames" not in data:
         raise ValueError("Missing 'ledNames' field")
     if "ledByPir" not in data:
@@ -197,12 +350,17 @@ def parse_device_label_metadata_payload(data: dict) -> tuple[list[str], list[int
         used_led_indices.add(led_index)
         cleaned_led_by_pir.append(led_index)
 
-    return cleaned_led_names, cleaned_led_by_pir
+    raw_alias = data.get("alias", "")
+    if not isinstance(raw_alias, str):
+        raise ValueError("'alias' must be a string")
+    cleaned_alias = normalize_alias(raw_alias)
+
+    return cleaned_led_names, cleaned_led_by_pir, cleaned_alias
 
 
 def parse_stored_device_label_metadata(
     value: object,
-) -> tuple[list[str], list[int]] | None:
+) -> tuple[list[str], list[int], str] | None:
     if not isinstance(value, dict):
         return None
     try:
@@ -225,7 +383,7 @@ def gather_global_labels(
         parsed = parse_stored_device_label_metadata(value)
         if parsed is None:
             continue
-        led_names, _ = parsed
+        led_names, _, _ = parsed
         for label in led_names:
             if label:
                 labels.add(label)
@@ -274,8 +432,8 @@ def get_led_names(device_name: str):
     if parsed is None:
         return JSONResponse(default_device_label_metadata(device_name))
 
-    led_names, led_by_pir = parsed
-    return JSONResponse({"ledNames": led_names, "ledByPir": led_by_pir})
+    led_names, led_by_pir, alias = parsed
+    return JSONResponse({"ledNames": led_names, "ledByPir": led_by_pir, "alias": alias})
 
 
 @app.post("/api/devices/{device_name}/led-names")
@@ -284,7 +442,7 @@ def update_led_names(device_name: str, data: dict):
     metadata = load_metadata()
 
     try:
-        cleaned_led_names, cleaned_led_by_pir = parse_device_label_metadata_payload(data)
+        cleaned_led_names, cleaned_led_by_pir, cleaned_alias = parse_device_label_metadata_payload(data)
     except ValueError as e:
         return JSONResponse({"error": str(e)}, status_code=400)
 
@@ -308,6 +466,7 @@ def update_led_names(device_name: str, data: dict):
     metadata[device_name] = {
         "ledNames": cleaned_led_names,
         "ledByPir": cleaned_led_by_pir,
+        "alias": cleaned_alias,
     }
     METADATA_FILE.write_text(json.dumps(metadata, indent=2))
 
@@ -576,7 +735,8 @@ def apply_mood_config(name: str, payload: dict | None = None):
     success_count = 0
     failures: list[str] = []
 
-    for device in discover_devices():
+    resolve_devices_now()
+    for device in list_resolved_devices():
         device_name = device.get("name")
         host = device.get("host")
         port = device.get("port")
@@ -588,7 +748,7 @@ def apply_mood_config(name: str, payload: dict | None = None):
         stored_led_names: list[str] = []
         parsed_metadata = parse_stored_device_label_metadata(metadata.get(device_name))
         if parsed_metadata is not None:
-            stored_led_names, _ = parsed_metadata
+            stored_led_names, _, _ = parsed_metadata
 
         for led_index in range(LED_COUNT):
             raw_label = (

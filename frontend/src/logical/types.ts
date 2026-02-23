@@ -1,8 +1,9 @@
-import { type Device, type LedConfig, type MoodConfig } from '../types';
+import { type LedConfig, type MoodConfig, type ResolvedDevice } from '../types';
 
 export interface LedEndpoint {
   id: string;
   deviceName: string;
+  deviceDisplayName: string;
   deviceUri: string;
   ledIndex: number;
   label: string;
@@ -35,10 +36,10 @@ export interface ApplyReport {
   failures: string[];
 }
 
-export function toDeviceUri(device: Device): string {
+export function toDeviceUri(device: ResolvedDevice): string {
   return `${device.host}:${device.port}`;
 }
 
-export function endpointId(deviceUri: string, ledIndex: number): string {
-  return `${deviceUri}/led/${ledIndex}`;
+export function endpointId(deviceName: string, ledIndex: number): string {
+  return `${deviceName}/led/${ledIndex}`;
 }

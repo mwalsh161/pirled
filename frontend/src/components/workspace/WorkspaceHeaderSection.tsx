@@ -8,6 +8,7 @@ interface WorkspaceHeaderSectionProps {
   hasUnsavedLabelChanges: boolean;
   dirtyLabelDeviceCount: number;
   onRefreshDevices: () => Promise<void>;
+  onDiscoverDevices: () => Promise<void>;
   onRefreshMoods: () => Promise<void>;
 }
 
@@ -29,6 +30,7 @@ export default function WorkspaceHeaderSection({
   hasUnsavedLabelChanges,
   dirtyLabelDeviceCount,
   onRefreshDevices,
+  onDiscoverDevices,
   onRefreshMoods,
 }: WorkspaceHeaderSectionProps) {
   return (
@@ -46,9 +48,18 @@ export default function WorkspaceHeaderSection({
             onClick={() => {
               void onRefreshDevices();
             }}
+            className="rounded border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+          >
+            Reload Known
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              void onDiscoverDevices();
+            }}
             className="rounded bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
           >
-            Refresh Devices
+            Discover Devices
           </button>
           <button
             type="button"

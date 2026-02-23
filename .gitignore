@@ -23,6 +23,7 @@ __pycache__
 include/ota_public_key.h
 pirled-backups/
 fp-info-cache
+api/data/
 
 # Logs
 logs

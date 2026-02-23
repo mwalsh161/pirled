@@ -53,7 +53,7 @@ function EndpointGrid({
               key={endpoint.id}
               className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-4 text-sm text-slate-600"
             >
-              Waiting for live data: {endpoint.deviceName} LED {endpoint.ledIndex}
+              Waiting for live data: {endpoint.deviceDisplayName} LED {endpoint.ledIndex}
             </div>
           );
         }

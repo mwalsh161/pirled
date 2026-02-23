@@ -1,17 +1,21 @@
-import { type Device } from '../../../types';
+import { type ResolvedDevice } from '../../../types';
 import { type DeviceLiveHealth } from '../../../live/useLiveLedTransport';
 import { toDeviceUri } from '../../../logical/types';
 
 interface DeviceHealthStripProps {
-  devices: Device[];
+  devices: ResolvedDevice[];
   deviceHealthByUri: Record<string, DeviceLiveHealth>;
   persistingByDeviceUri: Record<string, boolean>;
-  onPersistDevice: (device: Device) => void;
+  onPersistDevice: (device: ResolvedDevice) => void;
+  onRetryDevice: (device: ResolvedDevice) => void;
 }
 
-function healthClass(tone: 'idle' | 'ok' | 'error' | 'working'): string {
+function healthClass(tone: DeviceLiveHealth['tone']): string {
   if (tone === 'ok') {
     return 'border-emerald-200 bg-emerald-50 text-emerald-800';
+  }
+  if (tone === 'offline') {
+    return 'border-amber-200 bg-amber-50 text-amber-800';
   }
   if (tone === 'error') {
     return 'border-rose-200 bg-rose-50 text-rose-800';
@@ -22,9 +26,12 @@ function healthClass(tone: 'idle' | 'ok' | 'error' | 'working'): string {
   return 'border-slate-200 bg-slate-50 text-slate-700';
 }
 
-function toneDotClass(tone: 'idle' | 'ok' | 'error' | 'working'): string {
+function toneDotClass(tone: DeviceLiveHealth['tone']): string {
   if (tone === 'ok') {
     return 'bg-emerald-500';
+  }
+  if (tone === 'offline') {
+    return 'bg-amber-500';
   }
   if (tone === 'error') {
     return 'bg-rose-500';
@@ -48,18 +55,30 @@ export default function DeviceHealthStrip({
   deviceHealthByUri,
   persistingByDeviceUri,
   onPersistDevice,
+  onRetryDevice,
 }: DeviceHealthStripProps) {
   return (
     <div className="sticky top-2 z-20 rounded-xl border border-slate-200 bg-white/95 p-2 shadow-sm backdrop-blur">
       <div className="flex flex-wrap gap-2">
         {devices.map((device) => {
           const deviceUri = toDeviceUri(device);
+          const trimmedAlias = device.alias.trim();
+          const deviceDisplayName = trimmedAlias.length > 0 ? trimmedAlias : device.name;
           const health = deviceHealthByUri[deviceUri];
           const tone = health?.tone ?? 'idle';
           const queueDepth = health?.queueDepth ?? 0;
           const isPersisting = persistingByDeviceUri[deviceUri] ?? false;
+          const isOffline = tone === 'offline';
           const stateText =
-            health?.tone === 'error' ? 'error' : health?.inFlight ? 'syncing' : health?.tone === 'ok' ? 'ok' : 'idle';
+            tone === 'offline'
+              ? 'offline'
+              : health?.tone === 'error'
+                ? 'error'
+                : health?.inFlight
+                  ? 'syncing'
+                  : health?.tone === 'ok'
+                    ? 'ok'
+                    : 'idle';
           return (
             <div
               key={deviceUri}
@@ -67,7 +86,7 @@ export default function DeviceHealthStrip({
             >
               <div className="flex items-center gap-1.5 font-semibold">
                 <span className={`inline-block h-2 w-2 rounded-full ${toneDotClass(tone)}`} />
-                <span className="truncate">{device.name}</span>
+                <span className="truncate">{deviceDisplayName}</span>
               </div>
               <div className="mt-0.5 text-[11px] opacity-80">
                 {stateText} | q:{queueDepth} | last {secondsAgo(health?.lastSuccessAt)}
@@ -78,11 +97,22 @@ export default function DeviceHealthStrip({
                   onClick={() => {
                     onPersistDevice(device);
                   }}
-                  disabled={isPersisting}
+                  disabled={isPersisting || isOffline}
                   className="rounded border border-slate-300 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-400"
                 >
                   {isPersisting ? 'Saving...' : 'Save to Device'}
                 </button>
+                {isOffline ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onRetryDevice(device);
+                    }}
+                    className="ml-1 rounded border border-amber-300 bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800 hover:bg-amber-200"
+                  >
+                    Retry
+                  </button>
+                ) : null}
               </div>
               {health?.lastError ? <div className="mt-0.5 max-w-64 truncate text-[11px]">{health.lastError}</div> : null}
             </div>

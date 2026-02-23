@@ -11,6 +11,8 @@ import WorkspaceHeaderSection from './workspace/WorkspaceHeaderSection';
 export default function LogicalWorkspace() {
   const {
     devices,
+    resolvedDevices,
+    aliasesByDevice,
     endpoints,
     pirAssignmentsByDevice,
     labels,
@@ -23,9 +25,11 @@ export default function LogicalWorkspace() {
     dirtyLabelDeviceCount,
     hasUnsavedLabelChanges,
     refreshDevices,
+    discoverDevices,
     refreshMoods,
     loadMoodDetail,
     updateLabel,
+    updateAlias,
     assignDefaultPir,
     saveLabelsForDevice,
     createGroup,
@@ -35,6 +39,8 @@ export default function LogicalWorkspace() {
     removeMood,
   } = useLogicalWorkspace();
   const activeEndpoints = endpoints.filter((endpoint) => endpoint.label.trim().length > 0);
+  const resolvedDeviceNameSet = new Set(resolvedDevices.map((device) => device.name));
+  const liveEndpoints = activeEndpoints.filter((endpoint) => resolvedDeviceNameSet.has(endpoint.deviceName));
   const pirLabelsByDeviceUri = useMemo(() => {
     const labelsByDeviceLedIndex = new Map<string, Map<number, string>>();
     for (const endpoint of endpoints) {
@@ -44,7 +50,7 @@ export default function LogicalWorkspace() {
     }
 
     const byDeviceUri: Record<string, string[]> = {};
-    for (const device of devices) {
+    for (const device of resolvedDevices) {
       const assignment = pirAssignmentsByDevice[device.name] ?? [0, 1, 2, 3];
       const labelByLed = labelsByDeviceLedIndex.get(device.name);
       const resolved = Array.from({ length: PHYSICAL_PIR_COUNT }, (_, pirIndex) => {
@@ -55,7 +61,7 @@ export default function LogicalWorkspace() {
       byDeviceUri[toDeviceUri(device)] = resolved;
     }
     return byDeviceUri;
-  }, [devices, endpoints, pirAssignmentsByDevice]);
+  }, [endpoints, pirAssignmentsByDevice, resolvedDevices]);
 
   if (isBootstrapping) {
     return <div className="py-10 text-center text-gray-600">Loading logical workspace...</div>;
@@ -68,20 +74,23 @@ export default function LogicalWorkspace() {
         hasUnsavedLabelChanges={hasUnsavedLabelChanges}
         dirtyLabelDeviceCount={dirtyLabelDeviceCount}
         onRefreshDevices={refreshDevices}
+        onDiscoverDevices={discoverDevices}
         onRefreshMoods={refreshMoods}
       />
       <LabelMatrixSection
         devices={devices}
         endpoints={endpoints}
+        aliasesByDevice={aliasesByDevice}
         pirAssignmentsByDevice={pirAssignmentsByDevice}
         dirtyLabelDevices={dirtyLabelDevices}
         onUpdateLabel={updateLabel}
+        onUpdateAlias={updateAlias}
         onAssignDefaultPir={assignDefaultPir}
         onSaveLabelsForDevice={saveLabelsForDevice}
       />
       <LiveLedControlSection
-        devices={devices}
-        endpoints={activeEndpoints}
+        devices={resolvedDevices}
+        endpoints={liveEndpoints}
         groups={groups}
         pirLabelsByDeviceUri={pirLabelsByDeviceUri}
       />

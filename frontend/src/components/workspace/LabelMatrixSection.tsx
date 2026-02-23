@@ -1,12 +1,14 @@
-import { PHYSICAL_PIR_COUNT, type Device } from '../../types';
+import { PHYSICAL_PIR_COUNT, type KnownDevice } from '../../types';
 import { type LedEndpoint } from '../../logical/types';
 
 interface LabelMatrixSectionProps {
-  devices: Device[];
+  devices: KnownDevice[];
   endpoints: LedEndpoint[];
+  aliasesByDevice: Record<string, string>;
   pirAssignmentsByDevice: Record<string, number[]>;
   dirtyLabelDevices: Record<string, boolean>;
   onUpdateLabel: (endpointId: string, label: string) => void;
+  onUpdateAlias: (deviceName: string, alias: string) => void;
   onAssignDefaultPir: (deviceName: string, ledIndex: number, pirIndex: number) => void;
   onSaveLabelsForDevice: (deviceName: string) => Promise<void>;
 }
@@ -24,9 +26,11 @@ function groupEndpointsByDevice(endpoints: LedEndpoint[]): Map<string, LedEndpoi
 export default function LabelMatrixSection({
   devices,
   endpoints,
+  aliasesByDevice,
   pirAssignmentsByDevice,
   dirtyLabelDevices,
   onUpdateLabel,
+  onUpdateAlias,
   onAssignDefaultPir,
   onSaveLabelsForDevice,
 }: LabelMatrixSectionProps) {
@@ -38,6 +42,9 @@ export default function LabelMatrixSection({
       <p className="mb-4 text-sm text-gray-600">Rename LEDs to logical labels and persist by device.</p>
       <div className="grid gap-4 md:grid-cols-2">
         {devices.map((device) => {
+          const aliasDraft = aliasesByDevice[device.name] ?? device.alias;
+          const trimmedAlias = aliasDraft.trim();
+          const deviceDisplayName = trimmedAlias.length > 0 ? trimmedAlias : device.name;
           const rows = [...(endpointsByDevice.get(device.name) ?? [])].sort((left, right) => left.ledIndex - right.ledIndex);
           const assignment = pirAssignmentsByDevice[device.name] ?? [0, 1, 2, 3];
           const hasUnsavedLabels = dirtyLabelDevices[device.name] ?? false;
@@ -48,7 +55,7 @@ export default function LabelMatrixSection({
                 hasUnsavedLabels ? 'border-amber-300 bg-amber-50/40' : 'border-gray-200 bg-white'
               }`}
             >
-              <div className="mb-3 flex items-center justify-between">
+              <div className="mb-3 flex items-center justify-between gap-3">
                 <div>
                   <h4 className="flex items-center gap-2 font-semibold text-gray-900">
                     <span
@@ -56,10 +63,10 @@ export default function LabelMatrixSection({
                         hasUnsavedLabels ? 'bg-amber-500' : 'bg-gray-300'
                       }`}
                     />
-                    {device.name}
+                    {deviceDisplayName}
                   </h4>
                   <p className="text-xs text-gray-500">
-                    {device.host}:{device.port}
+                    {device.resolved ? 'Address resolved' : 'Address unresolved'}
                   </p>
                 </div>
                 <button
@@ -76,6 +83,18 @@ export default function LabelMatrixSection({
                   Save Labels
                 </button>
               </div>
+              <label className="mb-3 block text-xs font-medium text-gray-600">
+                Alias
+                <input
+                  type="text"
+                  value={aliasDraft}
+                  placeholder={device.name}
+                  onChange={(event) => {
+                    onUpdateAlias(device.name, event.target.value);
+                  }}
+                  className="mt-1 w-full rounded border border-gray-300 px-2 py-1 text-sm text-gray-900"
+                />
+              </label>
               <div className="space-y-2">
                 {rows.map((endpoint) => {
                   return (

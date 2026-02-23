@@ -1,12 +1,12 @@
 import { useEffect } from 'react';
-import { type Device } from '../types';
+import { type ResolvedDevice } from '../types';
 
 interface UseStaggeredDevicePollingInput {
-  devices: Device[];
+  devices: ResolvedDevice[];
   enabled: boolean;
   intervalMs: number;
   staggerMs?: number;
-  onPollDevice: (device: Device) => Promise<void>;
+  onPollDevice: (device: ResolvedDevice) => Promise<void>;
 }
 
 export function useStaggeredDevicePolling({
@@ -24,7 +24,7 @@ export function useStaggeredDevicePolling({
     let disposed = false;
     const timers = new Set<ReturnType<typeof setTimeout>>();
 
-    const scheduleDevicePoll = (device: Device, initialDelayMs: number) => {
+    const scheduleDevicePoll = (device: ResolvedDevice, initialDelayMs: number) => {
       const tick = async () => {
         if (disposed) {
           return;

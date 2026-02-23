@@ -114,7 +114,7 @@ function LedEndpointControl({
         <div>
           <h5 className="font-semibold text-slate-900">{endpoint.label}</h5>
           <p className="text-xs text-slate-500">
-            {endpoint.deviceName} LED {endpoint.ledIndex}
+            {endpoint.deviceDisplayName} LED {endpoint.ledIndex}
           </p>
         </div>
         <div className="flex items-center gap-1">
