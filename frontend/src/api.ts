@@ -1,5 +1,12 @@
 import { BufferDeviceState, buildFieldMap } from './BufferDeviceState';
-import { type ApplyReport, type LogicalGroup } from './logical/types';
+import {
+  type ApplyReport,
+  type LogicalGroup,
+  type MoodApplyStatus,
+  type MoodSchedule,
+  type MoodScheduleCreateInput,
+  type MoodScheduleUpdateInput,
+} from './logical/types';
 import {
   LED_COUNT,
   type KnownDevice,
@@ -239,12 +246,117 @@ function parseApplyReport(payload: unknown): ApplyReport {
   return { successCount, failureCount, failures };
 }
 
+function parseMoodSchedule(payload: unknown): MoodSchedule | null {
+  if (!isRecord(payload)) {
+    return null;
+  }
+  if (!isString(payload.id) || !isString(payload.moodName)) {
+    return null;
+  }
+  if (!isNumber(payload.intervalSeconds) || !isNumber(payload.nextRunAt) || !isBoolean(payload.enabled)) {
+    return null;
+  }
+  if (!isNumber(payload.createdAt) || !isNumber(payload.updatedAt)) {
+    return null;
+  }
+  if (payload.groupId !== null && payload.groupId !== undefined && !isString(payload.groupId)) {
+    return null;
+  }
+
+  const lastRunAt =
+    payload.lastRunAt === null || payload.lastRunAt === undefined
+      ? null
+      : isNumber(payload.lastRunAt)
+        ? payload.lastRunAt
+        : null;
+  const lastResult =
+    payload.lastResult === null || payload.lastResult === undefined
+      ? null
+      : parseApplyReport(payload.lastResult);
+
+  return {
+    id: payload.id,
+    moodName: payload.moodName,
+    groupId: payload.groupId ?? null,
+    intervalSeconds: payload.intervalSeconds,
+    nextRunAt: payload.nextRunAt,
+    enabled: payload.enabled,
+    createdAt: payload.createdAt,
+    updatedAt: payload.updatedAt,
+    lastRunAt,
+    lastResult,
+  };
+}
+
+function parseMoodSchedules(payload: unknown): MoodSchedule[] {
+  if (!Array.isArray(payload)) {
+    throw new Error('Invalid mood schedules payload');
+  }
+  return payload
+    .map((item) => parseMoodSchedule(item))
+    .filter((item): item is MoodSchedule => item !== null)
+    .sort((left, right) => left.nextRunAt - right.nextRunAt);
+}
+
+function parseMoodApplyStatus(payload: unknown): MoodApplyStatus {
+  if (!isRecord(payload)) {
+    return { lastApply: null };
+  }
+  const lastApplyRaw = payload.lastApply;
+  if (lastApplyRaw === null || lastApplyRaw === undefined) {
+    return { lastApply: null };
+  }
+  if (!isRecord(lastApplyRaw)) {
+    return { lastApply: null };
+  }
+  if (!isNumber(lastApplyRaw.appliedAt) || !isString(lastApplyRaw.source) || !isString(lastApplyRaw.moodName)) {
+    return { lastApply: null };
+  }
+  if (lastApplyRaw.source !== 'manual' && lastApplyRaw.source !== 'scheduled') {
+    return { lastApply: null };
+  }
+  const groupId =
+    lastApplyRaw.groupId === null || lastApplyRaw.groupId === undefined
+      ? null
+      : isString(lastApplyRaw.groupId)
+        ? lastApplyRaw.groupId
+        : null;
+  const scheduleId =
+    lastApplyRaw.scheduleId === null || lastApplyRaw.scheduleId === undefined
+      ? null
+      : isString(lastApplyRaw.scheduleId)
+        ? lastApplyRaw.scheduleId
+        : null;
+  const report = parseApplyReport(lastApplyRaw);
+  return {
+    lastApply: {
+      appliedAt: lastApplyRaw.appliedAt,
+      source: lastApplyRaw.source,
+      moodName: lastApplyRaw.moodName,
+      groupId,
+      scheduleId,
+      successCount: report.successCount,
+      failureCount: report.failureCount,
+      failures: report.failures,
+    },
+  };
+}
+
 async function throwResponseError(response: Response, fallbackMessage: string): Promise<never> {
   let message = fallbackMessage;
   try {
     const payload: unknown = await response.json();
-    if (isRecord(payload) && isString(payload.error) && payload.error.trim().length > 0) {
-      message = payload.error;
+    if (isRecord(payload)) {
+      if (isString(payload.error) && payload.error.trim().length > 0) {
+        message = payload.error;
+      } else if (isString(payload.detail) && payload.detail.trim().length > 0) {
+        message = payload.detail;
+      } else if (Array.isArray(payload.detail) && payload.detail.length > 0) {
+        const first = payload.detail[0];
+        if (isRecord(first) && isString(first.msg)) {
+          message = first.msg;
+        }
+      }
     }
   } catch {
     // Ignore JSON parse errors and keep fallback.
@@ -355,10 +467,17 @@ export async function getMoodConfig(name: string): Promise<MoodConfig> {
 }
 
 export async function saveMoodConfig(name: string, config: MoodConfig): Promise<void> {
+  const payload: Record<string, unknown> = {
+    description: config.description ?? '',
+    assignments: config.assignments,
+  };
+  if (config.timestamp !== undefined) {
+    payload.timestamp = config.timestamp;
+  }
   const response = await fetch(`${API_BASE}/mood-configs/${encodeURIComponent(name)}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(config),
+    body: JSON.stringify(payload),
   });
   if (!response.ok) await throwResponseError(response, 'Failed to save config');
 }
@@ -367,7 +486,7 @@ export async function deleteMoodConfig(name: string): Promise<void> {
   const response = await fetch(`${API_BASE}/mood-configs/${encodeURIComponent(name)}`, {
     method: 'DELETE',
   });
-  if (!response.ok) throw new Error('Failed to delete config');
+  if (!response.ok) await throwResponseError(response, 'Failed to delete config');
 }
 
 export async function getDeviceLabelMetadata(deviceName: string): Promise<DeviceLabelMetadata> {
@@ -399,9 +518,7 @@ export async function createLogicalGroup(name: string, labels: string[]): Promis
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name, labels }),
   });
-  if (!response.ok) {
-    throw new Error('Failed to create group');
-  }
+  if (!response.ok) await throwResponseError(response, 'Failed to create group');
   const payload: unknown = await response.json();
   const parsed = parseLogicalGroup(payload);
   if (!parsed) {
@@ -414,7 +531,7 @@ export async function deleteLogicalGroup(groupId: string): Promise<void> {
   const response = await fetch(`${API_BASE}/groups/${encodeURIComponent(groupId)}`, {
     method: 'DELETE',
   });
-  if (!response.ok) throw new Error('Failed to delete group');
+  if (!response.ok) await throwResponseError(response, 'Failed to delete group');
 }
 
 export async function applyMoodConfig(name: string, groupId: string | null): Promise<ApplyReport> {
@@ -423,9 +540,66 @@ export async function applyMoodConfig(name: string, groupId: string | null): Pro
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(groupId ? { groupId } : {}),
   });
-  if (!response.ok) throw new Error('Failed to apply mood');
+  if (!response.ok) await throwResponseError(response, 'Failed to apply mood');
   const payload: unknown = await response.json();
   return parseApplyReport(payload);
+}
+
+export async function getMoodApplyStatus(): Promise<MoodApplyStatus> {
+  const response = await fetch(`${API_BASE}/mood-apply-status`);
+  if (!response.ok) await throwResponseError(response, 'Failed to fetch mood apply status');
+  const payload: unknown = await response.json();
+  return parseMoodApplyStatus(payload);
+}
+
+export async function getMoodSchedules(): Promise<MoodSchedule[]> {
+  const response = await fetch(`${API_BASE}/mood-schedules`);
+  if (!response.ok) await throwResponseError(response, 'Failed to fetch mood schedules');
+  const payload: unknown = await response.json();
+  return parseMoodSchedules(payload);
+}
+
+export async function createMoodSchedule(input: MoodScheduleCreateInput): Promise<MoodSchedule> {
+  const response = await fetch(`${API_BASE}/mood-schedules`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      moodName: input.moodName,
+      groupId: input.groupId,
+      intervalSeconds: input.intervalSeconds,
+      firstRunAt: input.firstRunAt,
+      enabled: input.enabled,
+    }),
+  });
+  if (!response.ok) await throwResponseError(response, 'Failed to create mood schedule');
+  const payload: unknown = await response.json();
+  const parsed = parseMoodSchedule(payload);
+  if (!parsed) {
+    throw new Error('Invalid mood schedule response');
+  }
+  return parsed;
+}
+
+export async function updateMoodSchedule(scheduleId: string, patch: MoodScheduleUpdateInput): Promise<MoodSchedule> {
+  const response = await fetch(`${API_BASE}/mood-schedules/${encodeURIComponent(scheduleId)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  });
+  if (!response.ok) await throwResponseError(response, 'Failed to update mood schedule');
+  const payload: unknown = await response.json();
+  const parsed = parseMoodSchedule(payload);
+  if (!parsed) {
+    throw new Error('Invalid mood schedule response');
+  }
+  return parsed;
+}
+
+export async function deleteMoodSchedule(scheduleId: string): Promise<void> {
+  const response = await fetch(`${API_BASE}/mood-schedules/${encodeURIComponent(scheduleId)}`, {
+    method: 'DELETE',
+  });
+  if (!response.ok) await throwResponseError(response, 'Failed to delete mood schedule');
 }
 
 async function getFieldMap(deviceUri: string): Promise<ReturnType<typeof buildFieldMap>> {

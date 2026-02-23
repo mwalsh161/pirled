@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   applyMoodConfig,
+  createMoodSchedule as createMoodScheduleRequest,
   createLogicalGroup,
+  deleteMoodSchedule as deleteMoodScheduleRequest,
   deleteLogicalGroup,
   deleteMoodConfig,
   discoverDevices as discoverMdnsDevices,
@@ -9,11 +11,14 @@ import {
   getDeviceLabelMetadata,
   getDevices,
   getLogicalGroups,
+  getMoodApplyStatus,
   getMoodConfig,
   getMoodConfigs,
+  getMoodSchedules,
   resolveDevices,
   saveDeviceLabelMetadata,
   saveMoodConfig,
+  updateMoodSchedule as updateMoodScheduleRequest,
 } from '../api';
 import {
   LED_COUNT,
@@ -31,7 +36,11 @@ import {
   type ApplyReport,
   type LedEndpoint,
   type LogicalGroup,
+  type MoodApplyStatus,
   type MoodDetail,
+  type MoodSchedule,
+  type MoodScheduleCreateInput,
+  type MoodScheduleUpdateInput,
   type MoodSummary,
   type PersistedMoodPayload,
   toDeviceUri,
@@ -58,6 +67,14 @@ interface RefreshGroupsOptions {
 
 interface RefreshDevicesOptions {
   discover?: boolean;
+}
+
+interface RefreshMoodSchedulesOptions {
+  suppressStatus?: boolean;
+}
+
+interface RefreshMoodApplyStatusOptions {
+  suppressStatus?: boolean;
 }
 
 const DEFAULT_PIR_ASSIGNMENT = [0, 1, 2, 3] as const;
@@ -173,6 +190,15 @@ function arePirAssignmentsEqual(left: number[], right: number[]): boolean {
   return true;
 }
 
+function sortMoodSchedules(schedules: MoodSchedule[]): MoodSchedule[] {
+  return [...schedules].sort((left, right) => {
+    if (left.nextRunAt !== right.nextRunAt) {
+      return left.nextRunAt - right.nextRunAt;
+    }
+    return left.id.localeCompare(right.id);
+  });
+}
+
 export function useLogicalWorkspace() {
   const [devices, setDevices] = useState<KnownDevice[]>([]);
   const [resolvedDevicesByName, setResolvedDevicesByName] = useState<Record<string, ResolvedDevice>>({});
@@ -186,12 +212,16 @@ export function useLogicalWorkspace() {
   const [moods, setMoods] = useState<MoodSummary[]>([]);
   const [moodDetails, setMoodDetails] = useState<Record<string, MoodDetail>>({});
   const [dirtyMoodDetailsByName, setDirtyMoodDetailsByName] = useState<Record<string, boolean>>({});
+  const [moodSchedules, setMoodSchedules] = useState<MoodSchedule[]>([]);
+  const [moodApplyStatus, setMoodApplyStatus] = useState<MoodApplyStatus>({ lastApply: null });
   const [status, setStatus] = useState<WorkspaceStatus>({ tone: 'idle', message: 'Ready.' });
   const [isBootstrapping, setIsBootstrapping] = useState(true);
   const activeStatusTokenRef = useRef(0);
   const deviceRequestTokenRef = useRef(0);
   const moodRequestTokenRef = useRef(0);
   const groupRequestTokenRef = useRef(0);
+  const scheduleRequestTokenRef = useRef(0);
+  const applyStatusRequestTokenRef = useRef(0);
   const deviceAbortControllerRef = useRef<AbortController | null>(null);
 
   const endpoints = buildEndpoints(devices, resolvedDevicesByName, labelsByEndpoint);
@@ -420,6 +450,60 @@ export function useLogicalWorkspace() {
     }
   }, [settleStatus, startStatus]);
 
+  const refreshMoodSchedules = useCallback(async (options: RefreshMoodSchedulesOptions = {}) => {
+    const requestToken = scheduleRequestTokenRef.current + 1;
+    scheduleRequestTokenRef.current = requestToken;
+    const statusToken = options.suppressStatus ? null : startStatus('Refreshing mood schedules...');
+
+    try {
+      const schedules = await getMoodSchedules();
+      if (scheduleRequestTokenRef.current !== requestToken) {
+        return;
+      }
+
+      setMoodSchedules(sortMoodSchedules(schedules));
+      if (statusToken !== null) {
+        settleStatus(statusToken, { tone: 'success', message: `Loaded ${schedules.length} schedules.` });
+      }
+    } catch (error) {
+      if (scheduleRequestTokenRef.current !== requestToken) {
+        return;
+      }
+
+      const message = error instanceof Error ? error.message : 'Unknown schedules error';
+      if (statusToken !== null) {
+        settleStatus(statusToken, { tone: 'error', message: `Failed to load schedules: ${message}` });
+      }
+    }
+  }, [settleStatus, startStatus]);
+
+  const refreshMoodApplyStatus = useCallback(async (options: RefreshMoodApplyStatusOptions = {}) => {
+    const requestToken = applyStatusRequestTokenRef.current + 1;
+    applyStatusRequestTokenRef.current = requestToken;
+    const statusToken = options.suppressStatus ? null : startStatus('Refreshing mood apply status...');
+
+    try {
+      const nextStatus = await getMoodApplyStatus();
+      if (applyStatusRequestTokenRef.current !== requestToken) {
+        return;
+      }
+
+      setMoodApplyStatus(nextStatus);
+      if (statusToken !== null) {
+        settleStatus(statusToken, { tone: 'success', message: 'Loaded mood apply status.' });
+      }
+    } catch (error) {
+      if (applyStatusRequestTokenRef.current !== requestToken) {
+        return;
+      }
+
+      const message = error instanceof Error ? error.message : 'Unknown mood apply status error';
+      if (statusToken !== null) {
+        settleStatus(statusToken, { tone: 'error', message: `Failed to load mood apply status: ${message}` });
+      }
+    }
+  }, [settleStatus, startStatus]);
+
   const discoverDevices = useCallback(async () => {
     await refreshDevices({ discover: true });
   }, [refreshDevices]);
@@ -610,6 +694,47 @@ export function useLogicalWorkspace() {
         settleStatus(statusToken, { tone: 'error', message: `Failed to remove group: ${message}` });
       }
     })();
+  }
+
+  async function createMoodSchedule(input: MoodScheduleCreateInput): Promise<void> {
+    const statusToken = startStatus(`Creating schedule for "${input.moodName}"...`);
+    try {
+      const created = await createMoodScheduleRequest(input);
+      setMoodSchedules((previous) => sortMoodSchedules([...previous, created]));
+      settleStatus(statusToken, { tone: 'success', message: `Created schedule for "${created.moodName}".` });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown schedule create error';
+      settleStatus(statusToken, { tone: 'error', message: `Failed to create schedule: ${message}` });
+      throw error;
+    }
+  }
+
+  async function updateMoodSchedule(scheduleId: string, patch: MoodScheduleUpdateInput): Promise<void> {
+    const statusToken = startStatus(`Updating schedule "${scheduleId}"...`);
+    try {
+      const updated = await updateMoodScheduleRequest(scheduleId, patch);
+      setMoodSchedules((previous) =>
+        sortMoodSchedules(previous.map((schedule) => (schedule.id === updated.id ? updated : schedule)))
+      );
+      settleStatus(statusToken, { tone: 'success', message: `Updated schedule "${scheduleId}".` });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown schedule update error';
+      settleStatus(statusToken, { tone: 'error', message: `Failed to update schedule: ${message}` });
+      throw error;
+    }
+  }
+
+  async function deleteMoodSchedule(scheduleId: string): Promise<void> {
+    const statusToken = startStatus(`Deleting schedule "${scheduleId}"...`);
+    try {
+      await deleteMoodScheduleRequest(scheduleId);
+      setMoodSchedules((previous) => previous.filter((schedule) => schedule.id !== scheduleId));
+      settleStatus(statusToken, { tone: 'success', message: `Deleted schedule "${scheduleId}".` });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown schedule delete error';
+      settleStatus(statusToken, { tone: 'error', message: `Failed to delete schedule: ${message}` });
+      throw error;
+    }
   }
 
   async function saveMood({ name, description, captureGroupId }: SaveMoodInput): Promise<void> {
@@ -924,6 +1049,7 @@ export function useLogicalWorkspace() {
 
     try {
       const result = await applyMoodConfig(moodName, groupId);
+      void refreshMoodApplyStatus({ suppressStatus: true });
 
       if (result.failureCount > 0) {
         settleStatus(statusToken, {
@@ -983,12 +1109,20 @@ export function useLogicalWorkspace() {
         return;
       }
       await refreshGroups();
+      if (cancelled) {
+        return;
+      }
+      await refreshMoodSchedules({ suppressStatus: true });
+      if (cancelled) {
+        return;
+      }
+      await refreshMoodApplyStatus({ suppressStatus: true });
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [refreshDevices, refreshMoods, refreshGroups]);
+  }, [refreshDevices, refreshMoods, refreshGroups, refreshMoodSchedules, refreshMoodApplyStatus]);
 
   useEffect(
     () => () => {
@@ -1012,6 +1146,16 @@ export function useLogicalWorkspace() {
     };
   }, [hasUnsavedLabelChanges]);
 
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      void refreshMoodSchedules({ suppressStatus: true });
+      void refreshMoodApplyStatus({ suppressStatus: true });
+    }, 15000);
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [refreshMoodApplyStatus, refreshMoodSchedules]);
+
   return {
     devices,
     resolvedDevices,
@@ -1023,6 +1167,8 @@ export function useLogicalWorkspace() {
     moods,
     moodDetails,
     dirtyMoodDetailsByName,
+    moodSchedules,
+    moodApplyStatus,
     status,
     isBootstrapping,
     dirtyLabelDevices,
@@ -1032,6 +1178,8 @@ export function useLogicalWorkspace() {
     discoverDevices,
     refreshMoods,
     refreshGroups,
+    refreshMoodSchedules,
+    refreshMoodApplyStatus,
     loadMoodDetail,
     updateMoodAssignment,
     cloneMoodAssignment,
@@ -1043,6 +1191,9 @@ export function useLogicalWorkspace() {
     saveLabelsForDevice,
     createGroup,
     deleteGroup,
+    createMoodSchedule,
+    updateMoodSchedule,
+    deleteMoodSchedule,
     saveMood,
     applyMood,
     removeMood,

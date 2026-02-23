@@ -20,6 +20,8 @@ export default function LogicalWorkspace() {
     moods,
     moodDetails,
     dirtyMoodDetailsByName,
+    moodSchedules,
+    moodApplyStatus,
     status,
     isBootstrapping,
     dirtyLabelDevices,
@@ -28,6 +30,8 @@ export default function LogicalWorkspace() {
     refreshDevices,
     discoverDevices,
     refreshMoods,
+    refreshMoodSchedules,
+    refreshMoodApplyStatus,
     loadMoodDetail,
     updateMoodAssignment,
     cloneMoodAssignment,
@@ -39,6 +43,9 @@ export default function LogicalWorkspace() {
     saveLabelsForDevice,
     createGroup,
     deleteGroup,
+    createMoodSchedule,
+    updateMoodSchedule,
+    deleteMoodSchedule,
     saveMood,
     applyMood,
     removeMood,
@@ -106,6 +113,8 @@ export default function LogicalWorkspace() {
         moods={moods}
         moodDetails={moodDetails}
         dirtyMoodDetailsByName={dirtyMoodDetailsByName}
+        moodSchedules={moodSchedules}
+        moodApplyStatus={moodApplyStatus}
         onSaveMood={saveMood}
         onLoadMoodDetail={loadMoodDetail}
         onUpdateMoodAssignment={updateMoodAssignment}
@@ -114,6 +123,11 @@ export default function LogicalWorkspace() {
         onSaveMoodDetail={saveMoodDetail}
         onApplyMood={applyMood}
         onRemoveMood={removeMood}
+        onRefreshMoodSchedules={refreshMoodSchedules}
+        onRefreshMoodApplyStatus={refreshMoodApplyStatus}
+        onCreateMoodSchedule={createMoodSchedule}
+        onUpdateMoodSchedule={updateMoodSchedule}
+        onDeleteMoodSchedule={deleteMoodSchedule}
       />
     </div>
   );

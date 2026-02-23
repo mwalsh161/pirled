@@ -36,6 +36,47 @@ export interface ApplyReport {
   failures: string[];
 }
 
+export interface MoodApplyStatusEntry extends ApplyReport {
+  appliedAt: number;
+  source: 'manual' | 'scheduled';
+  moodName: string;
+  groupId: string | null;
+  scheduleId: string | null;
+}
+
+export interface MoodApplyStatus {
+  lastApply: MoodApplyStatusEntry | null;
+}
+
+export interface MoodSchedule {
+  id: string;
+  moodName: string;
+  groupId: string | null;
+  intervalSeconds: number;
+  nextRunAt: number;
+  enabled: boolean;
+  createdAt: number;
+  updatedAt: number;
+  lastRunAt: number | null;
+  lastResult: ApplyReport | null;
+}
+
+export interface MoodScheduleCreateInput {
+  moodName: string;
+  groupId: string | null;
+  intervalSeconds: number;
+  firstRunAt: number | null;
+  enabled: boolean;
+}
+
+export interface MoodScheduleUpdateInput {
+  moodName?: string;
+  groupId?: string | null;
+  intervalSeconds?: number;
+  nextRunAt?: number;
+  enabled?: boolean;
+}
+
 export function toDeviceUri(device: ResolvedDevice): string {
   return `${device.host}:${device.port}`;
 }
