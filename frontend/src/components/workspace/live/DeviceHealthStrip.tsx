@@ -6,13 +6,19 @@ interface DeviceHealthStripProps {
   devices: ResolvedDevice[];
   deviceHealthByUri: Record<string, DeviceLiveHealth>;
   persistingByDeviceUri: Record<string, boolean>;
+  pausedByDeviceUri: Record<string, boolean>;
   onPersistDevice: (device: ResolvedDevice) => void;
   onRetryDevice: (device: ResolvedDevice) => void;
 }
 
-function healthClass(tone: DeviceLiveHealth['tone']): string {
+type DisplayTone = DeviceLiveHealth['tone'] | 'paused';
+
+function healthClass(tone: DisplayTone): string {
   if (tone === 'ok') {
     return 'border-emerald-200 bg-emerald-50 text-emerald-800';
+  }
+  if (tone === 'paused') {
+    return 'border-amber-200 bg-amber-50 text-amber-800';
   }
   if (tone === 'offline') {
     return 'border-amber-200 bg-amber-50 text-amber-800';
@@ -26,9 +32,12 @@ function healthClass(tone: DeviceLiveHealth['tone']): string {
   return 'border-slate-200 bg-slate-50 text-slate-700';
 }
 
-function toneDotClass(tone: DeviceLiveHealth['tone']): string {
+function toneDotClass(tone: DisplayTone): string {
   if (tone === 'ok') {
     return 'bg-emerald-500';
+  }
+  if (tone === 'paused') {
+    return 'bg-amber-500';
   }
   if (tone === 'offline') {
     return 'bg-amber-500';
@@ -54,6 +63,7 @@ export default function DeviceHealthStrip({
   devices,
   deviceHealthByUri,
   persistingByDeviceUri,
+  pausedByDeviceUri,
   onPersistDevice,
   onRetryDevice,
 }: DeviceHealthStripProps) {
@@ -65,12 +75,16 @@ export default function DeviceHealthStrip({
           const trimmedAlias = device.alias.trim();
           const deviceDisplayName = trimmedAlias.length > 0 ? trimmedAlias : device.name;
           const health = deviceHealthByUri[deviceUri];
-          const tone = health?.tone ?? 'idle';
+          const isPaused = pausedByDeviceUri[deviceUri] ?? false;
           const queueDepth = health?.queueDepth ?? 0;
           const isPersisting = persistingByDeviceUri[deviceUri] ?? false;
+          const showPaused = isPaused && !health?.inFlight && !isPersisting;
+          const tone: DisplayTone = showPaused ? 'paused' : health?.tone ?? 'idle';
           const isOffline = tone === 'offline';
           const stateText =
-            tone === 'offline'
+            tone === 'paused'
+              ? 'paused'
+              : tone === 'offline'
               ? 'offline'
               : health?.tone === 'error'
                 ? 'error'

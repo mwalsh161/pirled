@@ -39,6 +39,7 @@ interface UseLiveLedTransportInput {
   endpoints: LedEndpoint[];
   autoRefreshEnabled: boolean;
   pollIntervalMs: number;
+  activePollingDeviceUris?: string[];
 }
 
 interface RefreshOptions {
@@ -142,6 +143,7 @@ export function useLiveLedTransport({
   endpoints,
   autoRefreshEnabled,
   pollIntervalMs,
+  activePollingDeviceUris,
 }: UseLiveLedTransportInput) {
   const [snapshotsByDeviceUri, setSnapshotsByDeviceUri] = useState<Record<string, DeviceSnapshot>>({});
   const [draftByEndpointId, setDraftByEndpointId] = useState<Record<string, LedConfig>>({});
@@ -163,6 +165,19 @@ export function useLiveLedTransport({
   const revisionByEndpointRef = useRef<Record<string, number>>({});
   const pollingSuppressedByDeviceRef = useRef<Record<string, boolean>>({});
   const pollFailuresByDeviceRef = useRef<Record<string, number>>({});
+  const previousVisibleDeviceUrisRef = useRef<Set<string>>(new Set());
+
+  const visibleDeviceUriSet = useMemo(() => {
+    if (activePollingDeviceUris) {
+      return new Set(activePollingDeviceUris);
+    }
+    return new Set(devices.map((device) => toDeviceUri(device)));
+  }, [activePollingDeviceUris, devices]);
+
+  const visibleDevices = useMemo(
+    () => devices.filter((device) => visibleDeviceUriSet.has(toDeviceUri(device))),
+    [devices, visibleDeviceUriSet]
+  );
 
   useEffect(() => {
     endpointByIdRef.current = new Map(endpoints.map((endpoint) => [endpoint.id, endpoint]));
@@ -669,9 +684,9 @@ export function useLiveLedTransport({
 
   const refreshAllDevices = useCallback(
     async (options: RefreshOptions = {}) => {
-      await Promise.all(devices.map((device) => refreshDevice(device, options)));
+      await Promise.all(visibleDevices.map((device) => refreshDevice(device, options)));
     },
-    [devices, refreshDevice]
+    [refreshDevice, visibleDevices]
   );
 
   const retryDevice = useCallback(
@@ -757,12 +772,26 @@ export function useLiveLedTransport({
   }, [devices, endpoints]);
 
   useEffect(() => {
-    void refreshAllDevices();
-  }, [devices, refreshAllDevices]);
+    const previousVisibleDeviceUris = previousVisibleDeviceUrisRef.current;
+    const newlyVisibleDevices = visibleDevices.filter(
+      (device) => !previousVisibleDeviceUris.has(toDeviceUri(device))
+    );
+    if (newlyVisibleDevices.length > 0) {
+      void Promise.all(
+        newlyVisibleDevices.map((device) => refreshDevice(device, { silent: true }))
+      );
+    }
+    previousVisibleDeviceUrisRef.current = new Set(
+      visibleDevices.map((device) => toDeviceUri(device))
+    );
+  }, [refreshDevice, visibleDevices]);
 
   const pollingDevices = useMemo(
-    () => devices.filter((device) => !pollingSuppressedByDeviceUri[toDeviceUri(device)]),
-    [devices, pollingSuppressedByDeviceUri]
+    () =>
+      visibleDevices.filter(
+        (device) => !pollingSuppressedByDeviceUri[toDeviceUri(device)]
+      ),
+    [pollingSuppressedByDeviceUri, visibleDevices]
   );
 
   const pollDevice = useCallback(

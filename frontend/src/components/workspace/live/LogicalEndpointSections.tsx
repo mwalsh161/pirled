@@ -6,6 +6,8 @@ import { type DeviceSnapshot, type LedConfig, type LedConfigUpdate } from '../..
 interface LogicalEndpointSectionsProps {
   endpoints: LedEndpoint[];
   groups: LogicalGroup[];
+  collapsedGroupIds: ReadonlySet<string>;
+  onToggleGroupCollapse: (groupId: string) => void;
   pirLabelsByDeviceUri: Record<string, string[]>;
   snapshotsByDeviceUri: Record<string, DeviceSnapshot>;
   draftByEndpointId: Record<string, LedConfig>;
@@ -82,6 +84,8 @@ function EndpointGrid({
 export default function LogicalEndpointSections({
   endpoints,
   groups,
+  collapsedGroupIds,
+  onToggleGroupCollapse,
   pirLabelsByDeviceUri,
   snapshotsByDeviceUri,
   draftByEndpointId,
@@ -142,38 +146,58 @@ export default function LogicalEndpointSections({
 
   return (
     <div className="space-y-6">
-      {groupedSections.map((section) => (
-        <article
-          key={section.group.id}
-          className="space-y-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm shadow-slate-200/50"
-        >
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <h4 className="font-semibold text-slate-900">{section.group.name}</h4>
-              <p className="text-xs text-slate-500">Logical group</p>
+      {groupedSections.map((section) => {
+        const isCollapsed = collapsedGroupIds.has(section.group.id);
+        return (
+          <article key={section.group.id} className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm shadow-slate-200/50">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h4 className="font-semibold text-slate-900">{section.group.name}</h4>
+                <p className="text-xs text-slate-500">Logical group</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="rounded-full border border-slate-300 bg-slate-50 px-2 py-0.5 text-xs text-slate-600">
+                  {section.labels.length} label{section.labels.length === 1 ? '' : 's'}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onToggleGroupCollapse(section.group.id);
+                  }}
+                  className="rounded-full border border-slate-300 bg-white px-2.5 py-0.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                >
+                  {isCollapsed ? 'Expand' : 'Collapse'}
+                </button>
+              </div>
             </div>
-            <span className="rounded-full border border-slate-300 bg-slate-50 px-2 py-0.5 text-xs text-slate-600">
-              {section.labels.length} label{section.labels.length === 1 ? '' : 's'}
-            </span>
-          </div>
-          {section.labels.map((entry) => (
-            <div key={`${section.group.id}:${entry.label}`} className="space-y-2 rounded-lg border border-slate-200 bg-slate-50/60 p-2.5">
-              <h5 className="text-sm font-medium text-slate-800">{entry.label}</h5>
-              <EndpointGrid
-                endpoints={entry.endpoints}
-                pirLabelsByDeviceUri={pirLabelsByDeviceUri}
-                snapshotsByDeviceUri={snapshotsByDeviceUri}
-                draftByEndpointId={draftByEndpointId}
-                dirtyByEndpointId={dirtyByEndpointId}
-                pendingByEndpointId={pendingByEndpointId}
-                onDraftChange={onDraftChange}
-                onApply={onApply}
-                onReset={onReset}
-              />
-            </div>
-          ))}
-        </article>
-      ))}
+            {isCollapsed ? (
+              <p className="mt-3 text-xs text-slate-500">Group is collapsed. Polling is paused for hidden devices.</p>
+            ) : (
+              <div className="mt-3 space-y-3">
+                {section.labels.map((entry) => (
+                  <div
+                    key={`${section.group.id}:${entry.label}`}
+                    className="space-y-2 rounded-lg border border-slate-200 bg-slate-50/60 p-2.5"
+                  >
+                    <h5 className="text-sm font-medium text-slate-800">{entry.label}</h5>
+                    <EndpointGrid
+                      endpoints={entry.endpoints}
+                      pirLabelsByDeviceUri={pirLabelsByDeviceUri}
+                      snapshotsByDeviceUri={snapshotsByDeviceUri}
+                      draftByEndpointId={draftByEndpointId}
+                      dirtyByEndpointId={dirtyByEndpointId}
+                      pendingByEndpointId={pendingByEndpointId}
+                      onDraftChange={onDraftChange}
+                      onApply={onApply}
+                      onReset={onReset}
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
+          </article>
+        );
+      })}
 
       {ungroupedLabels.length > 0 ? (
         <article className="space-y-3 rounded-xl border border-amber-200 bg-amber-50/50 p-3 shadow-sm shadow-amber-100/60">

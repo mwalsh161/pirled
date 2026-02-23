@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import DeviceHealthStrip from './live/DeviceHealthStrip';
 import LogicalEndpointSections from './live/LogicalEndpointSections';
 import { useLiveLedTransport } from '../../live/useLiveLedTransport';
-import { type LedEndpoint, type LogicalGroup } from '../../logical/types';
+import { toDeviceUri, type LedEndpoint, type LogicalGroup } from '../../logical/types';
 import { type ResolvedDevice } from '../../types';
 
 const POLL_INTERVAL_MS = 750;
@@ -14,8 +14,97 @@ interface LiveLedControlSectionProps {
   pirLabelsByDeviceUri: Record<string, string[]>;
 }
 
+function normalizeLabel(label: string): string {
+  return label.trim();
+}
+
+function buildVisibleDeviceUris(
+  endpoints: LedEndpoint[],
+  groups: LogicalGroup[],
+  collapsedGroupIds: ReadonlySet<string>
+): string[] {
+  const endpointsByLabel = new Map<string, LedEndpoint[]>();
+  for (const endpoint of endpoints) {
+    const label = normalizeLabel(endpoint.label);
+    if (!label) {
+      continue;
+    }
+    const current = endpointsByLabel.get(label) ?? [];
+    current.push(endpoint);
+    endpointsByLabel.set(label, current);
+  }
+
+  const groupedLabelSet = new Set<string>();
+  for (const group of groups) {
+    for (const label of group.labels) {
+      const normalized = normalizeLabel(label);
+      if (normalized) {
+        groupedLabelSet.add(normalized);
+      }
+    }
+  }
+
+  const visibleDeviceUris = new Set<string>();
+  for (const group of groups) {
+    if (collapsedGroupIds.has(group.id)) {
+      continue;
+    }
+    for (const label of group.labels) {
+      const normalized = normalizeLabel(label);
+      if (!normalized) {
+        continue;
+      }
+      for (const endpoint of endpointsByLabel.get(normalized) ?? []) {
+        visibleDeviceUris.add(endpoint.deviceUri);
+      }
+    }
+  }
+
+  for (const [label, labelEndpoints] of endpointsByLabel.entries()) {
+    if (groupedLabelSet.has(label)) {
+      continue;
+    }
+    for (const endpoint of labelEndpoints) {
+      visibleDeviceUris.add(endpoint.deviceUri);
+    }
+  }
+
+  return Array.from(visibleDeviceUris).sort();
+}
+
 export default function LiveLedControlSection({ devices, endpoints, groups, pirLabelsByDeviceUri }: LiveLedControlSectionProps) {
   const [isAutoRefreshEnabled, setIsAutoRefreshEnabled] = useState(true);
+  const [collapsedGroupIds, setCollapsedGroupIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    const validGroupIds = new Set(groups.map((group) => group.id));
+    setCollapsedGroupIds((previous) => previous.filter((groupId) => validGroupIds.has(groupId)));
+  }, [groups]);
+
+  const collapsedGroupIdSet = useMemo(() => new Set(collapsedGroupIds), [collapsedGroupIds]);
+  const visibleDeviceUris = useMemo(
+    () => buildVisibleDeviceUris(endpoints, groups, collapsedGroupIdSet),
+    [endpoints, groups, collapsedGroupIdSet]
+  );
+  const visibleDeviceUriSet = useMemo(() => new Set(visibleDeviceUris), [visibleDeviceUris]);
+
+  const pausedByDeviceUri = useMemo<Record<string, boolean>>(() => {
+    const next: Record<string, boolean> = {};
+    for (const device of devices) {
+      const deviceUri = toDeviceUri(device);
+      next[deviceUri] = !visibleDeviceUriSet.has(deviceUri);
+    }
+    return next;
+  }, [devices, visibleDeviceUriSet]);
+
+  const toggleGroupCollapse = useCallback((groupId: string) => {
+    setCollapsedGroupIds((previous) => {
+      if (previous.includes(groupId)) {
+        return previous.filter((id) => id !== groupId);
+      }
+      return [...previous, groupId];
+    });
+  }, []);
 
   const {
     snapshotsByDeviceUri,
@@ -35,6 +124,7 @@ export default function LiveLedControlSection({ devices, endpoints, groups, pirL
     endpoints,
     autoRefreshEnabled: isAutoRefreshEnabled,
     pollIntervalMs: POLL_INTERVAL_MS,
+    activePollingDeviceUris: visibleDeviceUris,
   });
 
   return (
@@ -46,6 +136,9 @@ export default function LiveLedControlSection({ devices, endpoints, groups, pirL
           <div className="flex flex-wrap gap-1.5 text-xs">
             <span className="rounded-full border border-slate-300 bg-white px-2 py-0.5 text-slate-600">
               Devices: {devices.length}
+            </span>
+            <span className="rounded-full border border-slate-300 bg-white px-2 py-0.5 text-slate-600">
+              Visible: {visibleDeviceUris.length}
             </span>
             <span className="rounded-full border border-slate-300 bg-white px-2 py-0.5 text-slate-600">
               Endpoints: {endpoints.length}
@@ -72,10 +165,10 @@ export default function LiveLedControlSection({ devices, endpoints, groups, pirL
             onClick={() => {
               void refreshAllDevices();
             }}
-            disabled={devices.length === 0}
+            disabled={visibleDeviceUris.length === 0}
             className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
           >
-            Refresh All
+            Refresh Visible
           </button>
         </div>
       </div>
@@ -90,6 +183,7 @@ export default function LiveLedControlSection({ devices, endpoints, groups, pirL
             devices={devices}
             deviceHealthByUri={deviceHealthByUri}
             persistingByDeviceUri={persistingByDeviceUri}
+            pausedByDeviceUri={pausedByDeviceUri}
             onPersistDevice={(device) => {
               void persistDevice(device);
             }}
@@ -100,6 +194,8 @@ export default function LiveLedControlSection({ devices, endpoints, groups, pirL
           <LogicalEndpointSections
             endpoints={endpoints}
             groups={groups}
+            collapsedGroupIds={collapsedGroupIdSet}
+            onToggleGroupCollapse={toggleGroupCollapse}
             pirLabelsByDeviceUri={pirLabelsByDeviceUri}
             snapshotsByDeviceUri={snapshotsByDeviceUri}
             draftByEndpointId={draftByEndpointId}
