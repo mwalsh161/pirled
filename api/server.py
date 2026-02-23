@@ -20,6 +20,7 @@ app = FastAPI()
 VALID_NAME_PATTERN = re.compile(r"[^a-zA-Z0-9_-]")
 LED_COUNT = 4
 PIR_COUNT = 4
+DISPLAY_TEXT_MAX_LENGTH = 64
 LED_CONFIG_FIELDS: tuple[str, ...] = (
     "brightness",
     "rampOnMs",
@@ -266,8 +267,34 @@ def normalize_label(label: str) -> str:
     return label.strip()
 
 
-def normalize_alias(alias: str) -> str:
-    return alias.strip()
+def clean_display_text(
+    value: str,
+    *,
+    field_name: str,
+    enforce_charset: bool,
+    allow_empty: bool,
+) -> str:
+    trimmed = value.strip()
+    if len(trimmed) > DISPLAY_TEXT_MAX_LENGTH:
+        raise ValueError(
+            f"'{field_name}' must be at most {DISPLAY_TEXT_MAX_LENGTH} characters"
+        )
+    if enforce_charset and VALID_NAME_PATTERN.search(trimmed):
+        raise ValueError(
+            f"'{field_name}' may only contain letters, numbers, dash, and underscore"
+        )
+    if not allow_empty and not trimmed:
+        raise ValueError(f"'{field_name}' must not be empty")
+    return trimmed
+
+
+def clean_device_alias(value: str) -> str:
+    return clean_display_text(
+        value,
+        field_name="alias",
+        enforce_charset=False,
+        allow_empty=True,
+    )
 
 
 def metadata_alias_value(metadata: dict, device_name: str) -> str:
@@ -275,17 +302,29 @@ def metadata_alias_value(metadata: dict, device_name: str) -> str:
     if isinstance(raw_value, dict):
         alias_value = raw_value.get("alias")
         if isinstance(alias_value, str):
-            return normalize_alias(alias_value)
+            try:
+                return clean_device_alias(alias_value)
+            except ValueError:
+                return ""
     return ""
 
 
 def clean_led_label(label: str) -> str:
-    trimmed = normalize_label(label)
-    if VALID_NAME_PATTERN.search(trimmed):
-        raise ValueError(
-            "LED labels may only contain letters, numbers, dash, and underscore"
-        )
-    return trimmed
+    return clean_display_text(
+        label,
+        field_name="ledNames entry",
+        enforce_charset=True,
+        allow_empty=True,
+    )
+
+
+def clean_mood_assignment_label(label: str) -> str:
+    return clean_display_text(
+        label,
+        field_name="Mood assignment label",
+        enforce_charset=True,
+        allow_empty=False,
+    )
 
 
 def load_metadata() -> dict:
@@ -353,7 +392,7 @@ def parse_device_label_metadata_payload(data: dict) -> tuple[list[str], list[int
     raw_alias = data.get("alias", "")
     if not isinstance(raw_alias, str):
         raise ValueError("'alias' must be a string")
-    cleaned_alias = normalize_alias(raw_alias)
+    cleaned_alias = clean_device_alias(raw_alias)
 
     return cleaned_led_names, cleaned_led_by_pir, cleaned_alias
 
@@ -408,9 +447,7 @@ def parse_mood_assignments(assignments: object) -> dict[str, dict]:
     for raw_label, raw_config in assignments.items():
         if not isinstance(raw_label, str):
             raise ValueError("Mood assignment labels must be strings")
-        label = clean_led_label(raw_label)
-        if not label:
-            raise ValueError("Mood assignment labels must be non-empty")
+        label = clean_mood_assignment_label(raw_label)
         if not is_valid_led_config(raw_config):
             raise ValueError(f"Invalid LED config for label '{label}'")
         parsed[label] = raw_config
