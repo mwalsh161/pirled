@@ -256,8 +256,9 @@ METADATA_FILE = METADATA_DIR / "devices_metadata.json"
 
 
 def clean_config_name(name: str) -> str:
-    """Clean config name: allow only alphanumeric, dash, underscore."""
-    cleaned = VALID_NAME_PATTERN.sub("", name)
+    """Clean config name: map whitespace to underscores, allow only alphanumeric, dash, underscore."""
+    normalized = re.sub(r"\s+", "_", name.strip())
+    cleaned = VALID_NAME_PATTERN.sub("", normalized)
     if not cleaned:
         raise ValueError("Config name must contain at least one alphanumeric character")
     return cleaned
@@ -516,6 +517,8 @@ def update_led_names(device_name: str, data: dict):
 
 DATA_DIR = THIS_DIR / "data"
 DATA_DIR.mkdir(exist_ok=True)
+MOODS_DIR = DATA_DIR / "moods"
+MOODS_DIR.mkdir(exist_ok=True)
 GROUPS_DIR = DATA_DIR / "groups"
 GROUPS_DIR.mkdir(exist_ok=True)
 GROUPS_FILE = GROUPS_DIR / "logical_groups.json"
@@ -631,13 +634,10 @@ def delete_group(group_id: str):
 def list_mood_configs():
     """List all saved mood configs."""
     configs = []
-    if not DATA_DIR.exists():
+    if not MOODS_DIR.exists():
         return JSONResponse([])
 
-    for f in DATA_DIR.glob("*.json"):
-        # Skip metadata file
-        if f.name == "devices_metadata.json":
-            continue
+    for f in MOODS_DIR.glob("*.json"):
         try:
             cfg = json.loads(f.read_text())
             configs.append(
@@ -661,7 +661,7 @@ def get_mood_config(name: str):
     except ValueError as e:
         return JSONResponse({"error": str(e)}, status_code=400)
 
-    config_path = DATA_DIR / f"{name}.json"
+    config_path = MOODS_DIR / f"{name}.json"
 
     if not config_path.exists():
         return JSONResponse({"error": "Config not found"}, status_code=404)
@@ -680,7 +680,7 @@ def save_mood_config(name: str, config_data: dict):
     except ValueError as e:
         return JSONResponse({"error": str(e)}, status_code=400)
 
-    config_path = DATA_DIR / f"{name}.json"
+    config_path = MOODS_DIR / f"{name}.json"
 
     if not isinstance(config_data, dict):
         return JSONResponse({"error": "Invalid mood payload"}, status_code=400)
@@ -718,7 +718,7 @@ def delete_mood_config(name: str):
     except ValueError as e:
         return JSONResponse({"error": str(e)}, status_code=400)
 
-    config_path = DATA_DIR / f"{name}.json"
+    config_path = MOODS_DIR / f"{name}.json"
 
     if not config_path.exists():
         return JSONResponse({"error": "Config not found"}, status_code=404)
@@ -737,7 +737,7 @@ def apply_mood_config(name: str, payload: dict | None = None):
     except ValueError as e:
         return JSONResponse({"error": str(e)}, status_code=400)
 
-    config_path = DATA_DIR / f"{name}.json"
+    config_path = MOODS_DIR / f"{name}.json"
     if not config_path.exists():
         return JSONResponse({"error": "Config not found"}, status_code=404)
 
