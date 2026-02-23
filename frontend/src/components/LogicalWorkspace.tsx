@@ -19,6 +19,7 @@ export default function LogicalWorkspace() {
     groups,
     moods,
     moodDetails,
+    dirtyMoodDetailsByName,
     status,
     isBootstrapping,
     dirtyLabelDevices,
@@ -28,6 +29,10 @@ export default function LogicalWorkspace() {
     discoverDevices,
     refreshMoods,
     loadMoodDetail,
+    updateMoodAssignment,
+    cloneMoodAssignment,
+    removeMoodAssignment,
+    saveMoodDetail,
     updateLabel,
     updateAlias,
     assignDefaultPir,
@@ -96,11 +101,17 @@ export default function LogicalWorkspace() {
       />
       <GroupsSection labels={labels} groups={groups} onCreateGroup={createGroup} onDeleteGroup={deleteGroup} />
       <MoodStudioSection
+        labels={labels}
         groups={groups}
         moods={moods}
         moodDetails={moodDetails}
+        dirtyMoodDetailsByName={dirtyMoodDetailsByName}
         onSaveMood={saveMood}
         onLoadMoodDetail={loadMoodDetail}
+        onUpdateMoodAssignment={updateMoodAssignment}
+        onCloneMoodAssignment={cloneMoodAssignment}
+        onRemoveMoodAssignment={removeMoodAssignment}
+        onSaveMoodDetail={saveMoodDetail}
         onApplyMood={applyMood}
         onRemoveMood={removeMood}
       />

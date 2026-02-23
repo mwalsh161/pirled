@@ -1,5 +1,6 @@
 import { PHYSICAL_PIR_COUNT, type KnownDevice } from '../../types';
 import { type LedEndpoint } from '../../logical/types';
+import { dirtyActionButtonClass, dirtyCardClass } from '../ui/dirtyState';
 
 interface LabelMatrixSectionProps {
   devices: KnownDevice[];
@@ -51,9 +52,7 @@ export default function LabelMatrixSection({
           return (
             <article
               key={device.name}
-              className={`rounded border p-4 transition-colors ${
-                hasUnsavedLabels ? 'border-amber-300 bg-amber-50/40' : 'border-gray-200 bg-white'
-              }`}
+              className={`rounded border p-4 transition-colors ${dirtyCardClass(hasUnsavedLabels, 'gray')}`}
             >
               <div className="mb-3 flex items-center justify-between gap-3">
                 <div>
@@ -74,11 +73,7 @@ export default function LabelMatrixSection({
                   onClick={() => {
                     void onSaveLabelsForDevice(device.name);
                   }}
-                  className={`rounded border px-2 py-1 text-xs font-medium ${
-                    hasUnsavedLabels
-                      ? 'border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100'
-                      : 'border-gray-300 text-gray-700 hover:bg-gray-50'
-                  }`}
+                  className={`rounded border px-2 py-1 text-xs font-medium ${dirtyActionButtonClass(hasUnsavedLabels, 'gray')}`}
                 >
                   Save Labels
                 </button>

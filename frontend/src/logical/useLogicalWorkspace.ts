@@ -22,6 +22,7 @@ import {
   type DeviceSnapshot,
   type KnownDevice,
   type LedConfig,
+  type LedConfigUpdate,
   type ResolvedDevice,
   isLedConfig,
 } from '../types';
@@ -76,6 +77,22 @@ function parseAssignmentsByLabel(payload: PersistedMoodPayload): Record<string, 
     }
     return accumulator;
   }, {});
+}
+
+function mergeLedConfig(config: LedConfig, patch: LedConfigUpdate): LedConfig {
+  return { ...config, ...patch };
+}
+
+function isLedConfigEqual(left: LedConfig, right: LedConfig): boolean {
+  return (
+    left.brightness === right.brightness &&
+    left.rampOnMs === right.rampOnMs &&
+    left.holdOnMs === right.holdOnMs &&
+    left.rampOffMs === right.rampOffMs &&
+    left.waitOnMs === right.waitOnMs &&
+    left.pirMaskOn === right.pirMaskOn &&
+    left.pirMaskOff === right.pirMaskOff
+  );
 }
 
 function toMoodSummary(config: { name: string; description?: string; timestamp?: number }): MoodSummary {
@@ -168,6 +185,7 @@ export function useLogicalWorkspace() {
   const [groups, setGroups] = useState<LogicalGroup[]>([]);
   const [moods, setMoods] = useState<MoodSummary[]>([]);
   const [moodDetails, setMoodDetails] = useState<Record<string, MoodDetail>>({});
+  const [dirtyMoodDetailsByName, setDirtyMoodDetailsByName] = useState<Record<string, boolean>>({});
   const [status, setStatus] = useState<WorkspaceStatus>({ tone: 'idle', message: 'Ready.' });
   const [isBootstrapping, setIsBootstrapping] = useState(true);
   const activeStatusTokenRef = useRef(0);
@@ -425,6 +443,14 @@ export function useLogicalWorkspace() {
       };
 
       setMoodDetails((previous) => ({ ...previous, [name]: detail }));
+      setDirtyMoodDetailsByName((previous) => {
+        if (!previous[name]) {
+          return previous;
+        }
+        const next = { ...previous };
+        delete next[name];
+        return next;
+      });
       return detail;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown mood detail error';
@@ -698,6 +724,14 @@ export function useLogicalWorkspace() {
           assignmentsByLabel,
         },
       }));
+      setDirtyMoodDetailsByName((previous) => {
+        if (!previous[trimmedName]) {
+          return previous;
+        }
+        const next = { ...previous };
+        delete next[trimmedName];
+        return next;
+      });
       await refreshMoods({ suppressStatus: true });
       settleStatus(statusToken, {
         tone: 'success',
@@ -706,6 +740,178 @@ export function useLogicalWorkspace() {
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown mood save error';
       settleStatus(statusToken, { tone: 'error', message: `Failed to save mood "${trimmedName}": ${message}` });
+    }
+  }
+
+  function updateMoodAssignment(moodName: string, label: string, patch: LedConfigUpdate): void {
+    const normalizedLabel = normalizeLabel(label);
+    if (!normalizedLabel) {
+      return;
+    }
+
+    const detail = moodDetails[moodName];
+    if (!detail) {
+      return;
+    }
+    const existingConfig = detail.assignmentsByLabel[normalizedLabel];
+    if (!existingConfig) {
+      return;
+    }
+
+    const nextConfig = mergeLedConfig(existingConfig, patch);
+    if (isLedConfigEqual(existingConfig, nextConfig)) {
+      return;
+    }
+
+    setMoodDetails((previous) => ({
+      ...previous,
+      [moodName]: {
+        ...(previous[moodName] ?? detail),
+        assignmentsByLabel: {
+          ...((previous[moodName] ?? detail).assignmentsByLabel ?? {}),
+          [normalizedLabel]: nextConfig,
+        },
+      },
+    }));
+    setDirtyMoodDetailsByName((previous) => ({
+      ...previous,
+      [moodName]: true,
+    }));
+  }
+
+  function cloneMoodAssignment(moodName: string, sourceLabel: string, nextLabelRaw: string): void {
+    const normalizedSourceLabel = normalizeLabel(sourceLabel);
+    const normalizedNextLabel = normalizeLabel(nextLabelRaw);
+    if (!normalizedSourceLabel) {
+      const message = 'Select a source label to clone.';
+      setStatusImmediate({ tone: 'error', message });
+      throw new Error(message);
+    }
+    if (!normalizedNextLabel) {
+      const message = 'New label is required.';
+      setStatusImmediate({ tone: 'error', message });
+      throw new Error(message);
+    }
+
+    const detail = moodDetails[moodName];
+    if (!detail) {
+      const message = `Load mood "${moodName}" detail before adding assignments.`;
+      setStatusImmediate({ tone: 'error', message });
+      throw new Error(message);
+    }
+
+    const sourceConfig = detail.assignmentsByLabel[normalizedSourceLabel];
+    if (!sourceConfig) {
+      const message = `Source label "${normalizedSourceLabel}" not found in mood "${moodName}".`;
+      setStatusImmediate({ tone: 'error', message });
+      throw new Error(message);
+    }
+
+    if (detail.assignmentsByLabel[normalizedNextLabel]) {
+      const message = `Label "${normalizedNextLabel}" already exists in mood "${moodName}".`;
+      setStatusImmediate({ tone: 'error', message });
+      throw new Error(message);
+    }
+
+    setMoodDetails((previous) => ({
+      ...previous,
+      [moodName]: {
+        ...(previous[moodName] ?? detail),
+        assignmentsByLabel: {
+          ...((previous[moodName] ?? detail).assignmentsByLabel ?? {}),
+          [normalizedNextLabel]: { ...sourceConfig },
+        },
+      },
+    }));
+    setDirtyMoodDetailsByName((previous) => ({
+      ...previous,
+      [moodName]: true,
+    }));
+  }
+
+  function removeMoodAssignment(moodName: string, label: string): void {
+    const normalizedLabel = normalizeLabel(label);
+    if (!normalizedLabel) {
+      return;
+    }
+
+    const detail = moodDetails[moodName];
+    if (!detail) {
+      const message = `Load mood "${moodName}" detail before removing assignments.`;
+      setStatusImmediate({ tone: 'error', message });
+      throw new Error(message);
+    }
+
+    if (!detail.assignmentsByLabel[normalizedLabel]) {
+      const message = `Label "${normalizedLabel}" not found in mood "${moodName}".`;
+      setStatusImmediate({ tone: 'error', message });
+      throw new Error(message);
+    }
+
+    if (Object.keys(detail.assignmentsByLabel).length <= 1) {
+      const message = `Mood "${moodName}" must keep at least one assignment.`;
+      setStatusImmediate({ tone: 'error', message });
+      throw new Error(message);
+    }
+
+    setMoodDetails((previous) => {
+      const existing = previous[moodName] ?? detail;
+      const nextAssignments = { ...existing.assignmentsByLabel };
+      delete nextAssignments[normalizedLabel];
+      return {
+        ...previous,
+        [moodName]: {
+          ...existing,
+          assignmentsByLabel: nextAssignments,
+        },
+      };
+    });
+    setDirtyMoodDetailsByName((previous) => ({
+      ...previous,
+      [moodName]: true,
+    }));
+  }
+
+  async function saveMoodDetail(moodName: string): Promise<void> {
+    const detail = moodDetails[moodName];
+    if (!detail) {
+      const message = `Load mood "${moodName}" detail before saving edits.`;
+      setStatusImmediate({ tone: 'error', message });
+      throw new Error(message);
+    }
+
+    const statusToken = startStatus(`Saving edits for mood "${moodName}"...`);
+    const timestamp = Math.floor(Date.now() / 1000);
+    const payload: PersistedMoodPayload = {
+      name: detail.name,
+      description: detail.description,
+      timestamp,
+      assignments: detail.assignmentsByLabel,
+    };
+
+    try {
+      await saveMoodConfig(moodName, payload);
+      setMoodDetails((previous) => ({
+        ...previous,
+        [moodName]: {
+          ...(previous[moodName] ?? detail),
+          timestamp,
+        },
+      }));
+      setDirtyMoodDetailsByName((previous) => {
+        if (!previous[moodName]) {
+          return previous;
+        }
+        const next = { ...previous };
+        delete next[moodName];
+        return next;
+      });
+      await refreshMoods({ suppressStatus: true });
+      settleStatus(statusToken, { tone: 'success', message: `Saved edits for mood "${moodName}".` });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown mood save error';
+      settleStatus(statusToken, { tone: 'error', message: `Failed to save mood "${moodName}": ${message}` });
+      throw error;
     }
   }
 
@@ -749,6 +955,14 @@ export function useLogicalWorkspace() {
         const copy = { ...previous };
         delete copy[name];
         return copy;
+      });
+      setDirtyMoodDetailsByName((previous) => {
+        if (!previous[name]) {
+          return previous;
+        }
+        const next = { ...previous };
+        delete next[name];
+        return next;
       });
       settleStatus(statusToken, { tone: 'success', message: `Deleted mood "${name}".` });
     } catch (error) {
@@ -808,6 +1022,7 @@ export function useLogicalWorkspace() {
     groups,
     moods,
     moodDetails,
+    dirtyMoodDetailsByName,
     status,
     isBootstrapping,
     dirtyLabelDevices,
@@ -818,6 +1033,10 @@ export function useLogicalWorkspace() {
     refreshMoods,
     refreshGroups,
     loadMoodDetail,
+    updateMoodAssignment,
+    cloneMoodAssignment,
+    removeMoodAssignment,
+    saveMoodDetail,
     updateLabel,
     updateAlias,
     assignDefaultPir,
