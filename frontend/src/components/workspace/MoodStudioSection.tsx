@@ -27,6 +27,8 @@ interface ScheduleDraft {
   enabled: boolean;
 }
 
+type MoodStudioPanel = 'capture' | 'library' | 'schedules';
+
 interface MoodStudioSectionProps {
   labels: string[];
   groups: LogicalGroup[];
@@ -150,6 +152,7 @@ export default function MoodStudioSection({
   const [scheduleFirstRunInput, setScheduleFirstRunInput] = useState('');
   const [scheduleEnabledInput, setScheduleEnabledInput] = useState(true);
   const [scheduleDraftsById, setScheduleDraftsById] = useState<Record<string, ScheduleDraft>>({});
+  const [activePanel, setActivePanel] = useState<MoodStudioPanel>('library');
 
   useEffect(() => {
     if (moods.length === 0) {
@@ -420,6 +423,12 @@ export default function MoodStudioSection({
   };
 
   const lastApply = moodApplyStatus.lastApply;
+  const panelButtonClass = (panel: MoodStudioPanel) =>
+    `rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors ${
+      activePanel === panel
+        ? 'border-indigo-600 bg-indigo-600 text-white'
+        : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+    }`;
 
   return (
     <section className="rounded-lg border bg-white p-5 shadow-sm">
@@ -427,233 +436,154 @@ export default function MoodStudioSection({
       <p className="mb-4 text-sm text-gray-600">
         Capture by labels from all endpoints or a selected group, then apply by label across endpoints.
       </p>
-
-      <div className="mb-5 grid gap-3 rounded border border-gray-200 p-4 md:grid-cols-2">
-        <label className="text-sm">
-          <span className="mb-1 block font-medium text-gray-700">Mood Name</span>
-          <input
-            type="text"
-            value={moodNameInput}
-            onChange={(event) => {
-              setMoodNameInput(event.target.value);
-            }}
-            className="w-full rounded border border-gray-300 px-3 py-2"
-          />
-        </label>
-        <label className="text-sm">
-          <span className="mb-1 block font-medium text-gray-700">Capture Scope</span>
-          <select
-            value={captureScope}
-            onChange={(event) => {
-              setCaptureScope(event.target.value);
-            }}
-            className="w-full rounded border border-gray-300 px-3 py-2"
-          >
-            <option value="">All Labeled Endpoints</option>
-            {groups.map((group) => (
-              <option key={`capture:${group.id}`} value={group.id}>
-                {group.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="text-sm md:col-span-2">
-          <span className="mb-1 block font-medium text-gray-700">Description</span>
-          <input
-            type="text"
-            value={moodDescriptionInput}
-            onChange={(event) => {
-              setMoodDescriptionInput(event.target.value);
-            }}
-            className="w-full rounded border border-gray-300 px-3 py-2"
-          />
-        </label>
-        <div className="md:col-span-2">
-          <button
-            type="button"
-            onClick={handleSaveMood}
-            className="rounded bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700"
-          >
-            Capture Labels And Save Mood
-          </button>
-        </div>
+      <div className="mb-4 flex flex-wrap gap-2">
+        <button type="button" onClick={() => setActivePanel('capture')} className={panelButtonClass('capture')}>
+          Capture
+        </button>
+        <button type="button" onClick={() => setActivePanel('library')} className={panelButtonClass('library')}>
+          Library
+        </button>
+        <button type="button" onClick={() => setActivePanel('schedules')} className={panelButtonClass('schedules')}>
+          Schedules
+        </button>
       </div>
 
-      <label className="mb-3 block text-sm">
-        <span className="mb-1 block font-medium text-gray-700">Apply Scope</span>
-        <select
-          value={applyScope}
-          onChange={(event) => {
-            setApplyScope(event.target.value);
-          }}
-          className="w-full rounded border border-gray-300 px-3 py-2 md:w-80"
-        >
-          <option value="">All Labeled Endpoints</option>
-          {groups.map((group) => (
-            <option key={group.id} value={group.id}>
-              {group.name}
-            </option>
-          ))}
-        </select>
-      </label>
-
-      <div className="mb-5 rounded border border-indigo-200 bg-indigo-50 p-4">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h4 className="text-sm font-semibold text-indigo-900">Mood Scheduler</h4>
-          <button
-            type="button"
-            onClick={handleRefreshSchedulerData}
-            className="rounded border border-indigo-300 bg-white px-2 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-100"
-          >
-            Refresh
-          </button>
-        </div>
-        <p className="mt-1 text-xs text-indigo-800">
-          Auto-apply saved moods on an interval. Schedules run on the server and persist across reloads.
-        </p>
-
-        <div className="mt-3 rounded border border-indigo-200 bg-white p-3">
-          <h5 className="text-xs font-semibold uppercase tracking-wide text-indigo-900">Last Apply</h5>
-          {lastApply ? (
-            <div className="mt-1 space-y-1 text-xs text-gray-700">
-              <p>
-                {lastApply.source === 'scheduled' ? 'Scheduled' : 'Manual'} at {timestampToText(lastApply.appliedAt)}
-              </p>
-              <p>
-                Mood: <span className="font-medium">{lastApply.moodName}</span>
-              </p>
-              <p>Scope: {formatScope(groups, lastApply.groupId)}</p>
-              <p>Result: {summarizeApplyReport(lastApply)}</p>
-              {lastApply.scheduleId ? <p>Schedule: {lastApply.scheduleId}</p> : null}
-            </div>
-          ) : (
-            <p className="mt-1 text-xs text-gray-600">No applies recorded yet.</p>
-          )}
-        </div>
-
-        <div className="mt-3 grid gap-2 rounded border border-indigo-200 bg-white p-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_120px_220px_auto_auto]">
-          <label className="text-xs font-medium text-gray-700">
-            Mood
-            <select
-              value={scheduleMoodNameInput}
+      {activePanel === 'capture' ? (
+        <div className="grid gap-3 rounded border border-gray-200 p-4 md:grid-cols-2">
+          <label className="text-sm">
+            <span className="mb-1 block font-medium text-gray-700">Mood Name</span>
+            <input
+              type="text"
+              value={moodNameInput}
               onChange={(event) => {
-                setScheduleMoodNameInput(event.target.value);
+                setMoodNameInput(event.target.value);
               }}
-              className="mt-1 w-full rounded border border-gray-300 px-2 py-1 text-sm text-gray-900"
-            >
-              {moods.length === 0 ? <option value="">No moods available</option> : null}
-              {moods.map((mood) => (
-                <option key={`schedule-create-mood:${mood.name}`} value={mood.name}>
-                  {mood.name}
-                </option>
-              ))}
-            </select>
+              className="w-full rounded border border-gray-300 px-3 py-2"
+            />
           </label>
-          <label className="text-xs font-medium text-gray-700">
-            Scope
+          <label className="text-sm">
+            <span className="mb-1 block font-medium text-gray-700">Capture Scope</span>
             <select
-              value={scheduleGroupIdInput}
+              value={captureScope}
               onChange={(event) => {
-                setScheduleGroupIdInput(event.target.value);
+                setCaptureScope(event.target.value);
               }}
-              className="mt-1 w-full rounded border border-gray-300 px-2 py-1 text-sm text-gray-900"
+              className="w-full rounded border border-gray-300 px-3 py-2"
             >
               <option value="">All Labeled Endpoints</option>
               {groups.map((group) => (
-                <option key={`schedule-create-group:${group.id}`} value={group.id}>
+                <option key={`capture:${group.id}`} value={group.id}>
                   {group.name}
                 </option>
               ))}
             </select>
           </label>
-          <label className="text-xs font-medium text-gray-700">
-            Interval (sec)
+          <label className="text-sm md:col-span-2">
+            <span className="mb-1 block font-medium text-gray-700">Description</span>
             <input
-              type="number"
-              min={60}
-              step={1}
-              value={scheduleIntervalInput}
+              type="text"
+              value={moodDescriptionInput}
               onChange={(event) => {
-                setScheduleIntervalInput(event.target.value);
+                setMoodDescriptionInput(event.target.value);
               }}
-              className="mt-1 w-full rounded border border-gray-300 px-2 py-1 text-sm text-gray-900"
+              className="w-full rounded border border-gray-300 px-3 py-2"
             />
           </label>
-          <label className="text-xs font-medium text-gray-700">
-            First Run (optional)
-            <input
-              type="datetime-local"
-              step={1}
-              value={scheduleFirstRunInput}
-              onChange={(event) => {
-                setScheduleFirstRunInput(event.target.value);
-              }}
-              className="mt-1 w-full rounded border border-gray-300 px-2 py-1 text-sm text-gray-900"
-            />
-          </label>
-          <label className="flex items-end gap-2 text-xs font-medium text-gray-700">
-            <input
-              type="checkbox"
-              checked={scheduleEnabledInput}
-              onChange={(event) => {
-                setScheduleEnabledInput(event.target.checked);
-              }}
-              className="h-4 w-4 rounded border-gray-300"
-            />
-            Enabled
-          </label>
-          <button
-            type="button"
-            onClick={handleCreateSchedule}
-            disabled={moods.length === 0}
-            className="self-end rounded bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-indigo-300"
-          >
-            Add Schedule
-          </button>
+          <div className="md:col-span-2">
+            <button
+              type="button"
+              onClick={handleSaveMood}
+              className="rounded bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700"
+            >
+              Capture Labels And Save Mood
+            </button>
+          </div>
         </div>
+      ) : null}
 
-        <div className="mt-3 space-y-2">
-          {moodSchedules.length === 0 ? (
-            <p className="text-xs text-gray-700">No schedules configured.</p>
-          ) : (
-            moodSchedules.map((schedule) => {
-              const draft = scheduleDraftsById[schedule.id] ?? toScheduleDraft(schedule);
-              const hasMoodOption = moods.some((mood) => mood.name === draft.moodName);
-              const hasGroupOption = draft.groupId === '' || groups.some((group) => group.id === draft.groupId);
+      {activePanel === 'library' ? (
+        <div className="space-y-3">
+          <label className="block text-sm">
+            <span className="mb-1 block font-medium text-gray-700">Apply Scope</span>
+            <select
+              value={applyScope}
+              onChange={(event) => {
+                setApplyScope(event.target.value);
+              }}
+              className="w-full rounded border border-gray-300 px-3 py-2 md:w-80"
+            >
+              <option value="">All Labeled Endpoints</option>
+              {groups.map((group) => (
+                <option key={group.id} value={group.id}>
+                  {group.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="space-y-3">
+            {moods.map((mood) => {
+              const detail = moodDetails[mood.name];
+              const isDirty = dirtyMoodDetailsByName[mood.name] ?? false;
+              const assignmentCount = detail ? Object.keys(detail.assignmentsByLabel).length : null;
+              const sortedAssignments = detail
+                ? Object.entries(detail.assignmentsByLabel).sort(([left], [right]) => left.localeCompare(right))
+                : [];
+              const firstLabel = sortedAssignments[0]?.[0] ?? '';
+              const selectedCloneSource = cloneSourceByMood[mood.name] ?? firstLabel;
+              const cloneTargetOptions = detail ? labels.filter((label) => !detail.assignmentsByLabel[label]) : [];
+              const requestedCloneTarget = cloneTargetByMood[mood.name] ?? '';
+              const selectedCloneTarget = cloneTargetOptions.includes(requestedCloneTarget)
+                ? requestedCloneTarget
+                : cloneTargetOptions[0] ?? '';
               return (
-                <article key={schedule.id} className="rounded border border-indigo-200 bg-white p-3">
-                  <div className="mb-2 flex flex-wrap items-start justify-between gap-2">
-                    <div className="text-xs text-gray-700">
-                      <p className="font-semibold text-gray-900">{schedule.id}</p>
-                      <p>
-                        Next: {timestampToText(schedule.nextRunAt)} ({formatInterval(schedule.intervalSeconds)})
+                <article
+                  key={mood.name}
+                  className={`rounded border p-3 transition-colors ${dirtyCardClass(isDirty, 'gray')}`}
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <h4 className="font-semibold text-gray-900">{mood.name}</h4>
+                      <p className="text-sm text-gray-600">{mood.description || '(no description)'}</p>
+                      <p className="text-xs text-gray-500">Updated: {timestampToText(mood.timestamp)}</p>
+                      <p className="text-xs text-gray-500">
+                        Assignments: {assignmentCount === null ? 'Not loaded' : assignmentCount}
                       </p>
-                      <p>Last run: {schedule.lastRunAt ? timestampToText(schedule.lastRunAt) : 'Never'}</p>
-                      <p>Last result: {schedule.lastResult ? summarizeApplyReport(schedule.lastResult) : 'No runs yet'}</p>
                     </div>
                     <div className="flex flex-wrap gap-2">
+                      <DirtyBadge dirty={isDirty} className="py-1" />
                       <button
                         type="button"
                         onClick={() => {
-                          handleSaveSchedule(schedule);
-                        }}
-                        className="rounded border border-indigo-300 px-2 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-50"
-                      >
-                        Save
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          handleResetScheduleDraft(schedule);
+                          handleLoadMoodDetail(mood.name);
                         }}
                         className="rounded border border-gray-300 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
                       >
-                        Reset
+                        Load Detail
                       </button>
                       <button
                         type="button"
                         onClick={() => {
-                          handleDeleteSchedule(schedule);
+                          handleSaveMoodDetail(mood.name);
+                        }}
+                        disabled={!detail || !isDirty}
+                        className={`rounded border px-2 py-1 text-xs font-medium ${dirtyActionButtonClass(isDirty, 'gray')} disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-400`}
+                      >
+                        Save Edits
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          handleApplyMood(mood.name);
+                        }}
+                        disabled={isDirty}
+                        className="rounded bg-blue-600 px-2 py-1 text-xs font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-300"
+                      >
+                        Apply
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          handleDeleteMood(mood.name);
                         }}
                         className="rounded border border-red-300 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
                       >
@@ -661,248 +591,351 @@ export default function MoodStudioSection({
                       </button>
                     </div>
                   </div>
-                  <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_120px_220px_auto]">
-                    <label className="text-xs font-medium text-gray-700">
-                      Mood
-                      <select
-                        value={draft.moodName}
-                        onChange={(event) => {
-                          updateScheduleDraft(schedule.id, { moodName: event.target.value });
-                        }}
-                        className="mt-1 w-full rounded border border-gray-300 px-2 py-1 text-sm text-gray-900"
-                      >
-                        {!hasMoodOption && draft.moodName ? <option value={draft.moodName}>{draft.moodName}</option> : null}
-                        {moods.map((mood) => (
-                          <option key={`schedule-edit-mood:${schedule.id}:${mood.name}`} value={mood.name}>
-                            {mood.name}
-                          </option>
+                  {detail ? (
+                    <details className="mt-3">
+                      <summary className="cursor-pointer text-sm font-medium text-gray-700 hover:text-gray-900">
+                        Preview And Edit Assignments
+                      </summary>
+                      <div className="mt-3 space-y-3">
+                        {sortedAssignments.map(([label, config]) => (
+                          <div key={`${mood.name}:${label}`} className="rounded border border-slate-200 bg-slate-50 p-3">
+                            <div className="mb-2 flex items-center justify-between gap-2">
+                              <h5 className="text-sm font-semibold text-slate-900">{label}</h5>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  handleRemoveMoodAssignment(mood.name, label);
+                                }}
+                                disabled={sortedAssignments.length <= 1}
+                                className="rounded border border-red-300 px-2 py-0.5 text-xs font-medium text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-400"
+                              >
+                                Remove
+                              </button>
+                            </div>
+                            <LedConfigEditor
+                              config={config}
+                              onChange={(patch) => {
+                                onUpdateMoodAssignment(mood.name, label, patch);
+                              }}
+                            />
+                          </div>
                         ))}
-                      </select>
-                    </label>
-                    <label className="text-xs font-medium text-gray-700">
-                      Scope
-                      <select
-                        value={draft.groupId}
-                        onChange={(event) => {
-                          updateScheduleDraft(schedule.id, { groupId: event.target.value });
-                        }}
-                        className="mt-1 w-full rounded border border-gray-300 px-2 py-1 text-sm text-gray-900"
-                      >
-                        <option value="">All Labeled Endpoints</option>
-                        {!hasGroupOption && draft.groupId ? (
-                          <option value={draft.groupId}>Missing group ({draft.groupId})</option>
-                        ) : null}
-                        {groups.map((group) => (
-                          <option key={`schedule-edit-group:${schedule.id}:${group.id}`} value={group.id}>
-                            {group.name}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <label className="text-xs font-medium text-gray-700">
-                      Interval (sec)
-                      <input
-                        type="number"
-                        min={60}
-                        step={1}
-                        value={draft.intervalSeconds}
-                        onChange={(event) => {
-                          updateScheduleDraft(schedule.id, { intervalSeconds: event.target.value });
-                        }}
-                        className="mt-1 w-full rounded border border-gray-300 px-2 py-1 text-sm text-gray-900"
-                      />
-                    </label>
-                    <label className="text-xs font-medium text-gray-700">
-                      Next Run
-                      <input
-                        type="datetime-local"
-                        step={1}
-                        value={draft.nextRunLocal}
-                        onChange={(event) => {
-                          updateScheduleDraft(schedule.id, { nextRunLocal: event.target.value });
-                        }}
-                        className="mt-1 w-full rounded border border-gray-300 px-2 py-1 text-sm text-gray-900"
-                      />
-                    </label>
-                    <label className="flex items-end gap-2 text-xs font-medium text-gray-700">
-                      <input
-                        type="checkbox"
-                        checked={draft.enabled}
-                        onChange={(event) => {
-                          updateScheduleDraft(schedule.id, { enabled: event.target.checked });
-                        }}
-                        className="h-4 w-4 rounded border-gray-300"
-                      />
-                      Enabled
-                    </label>
-                  </div>
+                        <div className="rounded border border-dashed border-slate-300 bg-white p-3">
+                          <h5 className="mb-2 text-sm font-semibold text-slate-900">Add Assignment By Clone</h5>
+                          <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
+                            <label className="text-xs font-medium text-slate-700">
+                              Clone Source
+                              <select
+                                value={selectedCloneSource}
+                                onChange={(event) => {
+                                  setCloneSourceByMood((previous) => ({
+                                    ...previous,
+                                    [mood.name]: event.target.value,
+                                  }));
+                                }}
+                                className="mt-1 w-full rounded border border-slate-300 px-2 py-1 text-sm text-slate-900"
+                              >
+                                {sortedAssignments.map(([label]) => (
+                                  <option key={`clone-source:${mood.name}:${label}`} value={label}>
+                                    {label}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                            <label className="text-xs font-medium text-slate-700">
+                              Target Label
+                              <select
+                                value={selectedCloneTarget}
+                                onChange={(event) => {
+                                  setCloneTargetByMood((previous) => ({
+                                    ...previous,
+                                    [mood.name]: event.target.value,
+                                  }));
+                                }}
+                                className="mt-1 w-full rounded border border-slate-300 px-2 py-1 text-sm text-slate-900"
+                              >
+                                {cloneTargetOptions.length === 0 ? <option value="">No labels available</option> : null}
+                                {cloneTargetOptions.map((label) => (
+                                  <option key={`clone-target:${mood.name}:${label}`} value={label}>
+                                    {label}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                handleCloneMoodAssignment(mood.name, firstLabel, selectedCloneTarget);
+                              }}
+                              disabled={firstLabel.length === 0 || selectedCloneTarget.length === 0}
+                              className="self-end rounded border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-400"
+                            >
+                              Clone Add
+                            </button>
+                          </div>
+                          <p className="mt-2 text-xs text-slate-500">
+                            Clone copies LED config from an existing label. Mood must keep at least one assignment.
+                          </p>
+                        </div>
+                      </div>
+                    </details>
+                  ) : null}
                 </article>
               );
-            })
-          )}
+            })}
+          </div>
         </div>
-      </div>
+      ) : null}
 
-      <div className="space-y-3">
-        {moods.map((mood) => {
-          const detail = moodDetails[mood.name];
-          const isDirty = dirtyMoodDetailsByName[mood.name] ?? false;
-          const assignmentCount = detail ? Object.keys(detail.assignmentsByLabel).length : null;
-          const sortedAssignments = detail
-            ? Object.entries(detail.assignmentsByLabel).sort(([left], [right]) => left.localeCompare(right))
-            : [];
-          const firstLabel = sortedAssignments[0]?.[0] ?? '';
-          const selectedCloneSource = cloneSourceByMood[mood.name] ?? firstLabel;
-          const cloneTargetOptions = detail ? labels.filter((label) => !detail.assignmentsByLabel[label]) : [];
-          const requestedCloneTarget = cloneTargetByMood[mood.name] ?? '';
-          const selectedCloneTarget = cloneTargetOptions.includes(requestedCloneTarget)
-            ? requestedCloneTarget
-            : cloneTargetOptions[0] ?? '';
-          return (
-            <article
-              key={mood.name}
-              className={`rounded border p-3 transition-colors ${dirtyCardClass(isDirty, 'gray')}`}
+      {activePanel === 'schedules' ? (
+        <div className="rounded border border-indigo-200 bg-indigo-50 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h4 className="text-sm font-semibold text-indigo-900">Mood Scheduler</h4>
+            <button
+              type="button"
+              onClick={handleRefreshSchedulerData}
+              className="rounded border border-indigo-300 bg-white px-2 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-100"
             >
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <h4 className="font-semibold text-gray-900">{mood.name}</h4>
-                  <p className="text-sm text-gray-600">{mood.description || '(no description)'}</p>
-                  <p className="text-xs text-gray-500">Updated: {timestampToText(mood.timestamp)}</p>
-                  <p className="text-xs text-gray-500">Assignments: {assignmentCount === null ? 'Not loaded' : assignmentCount}</p>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <DirtyBadge dirty={isDirty} className="py-1" />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      handleLoadMoodDetail(mood.name);
-                    }}
-                    className="rounded border border-gray-300 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
-                  >
-                    Load Detail
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      handleSaveMoodDetail(mood.name);
-                    }}
-                    disabled={!detail || !isDirty}
-                    className={`rounded border px-2 py-1 text-xs font-medium ${dirtyActionButtonClass(isDirty, 'gray')} disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-400`}
-                  >
-                    Save Edits
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      handleApplyMood(mood.name);
-                    }}
-                    disabled={isDirty}
-                    className="rounded bg-blue-600 px-2 py-1 text-xs font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-300"
-                  >
-                    Apply
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      handleDeleteMood(mood.name);
-                    }}
-                    className="rounded border border-red-300 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
-                  >
-                    Delete
-                  </button>
-                </div>
+              Refresh
+            </button>
+          </div>
+          <p className="mt-1 text-xs text-indigo-800">
+            Auto-apply saved moods on an interval. Schedules run on the server and persist across reloads.
+          </p>
+
+          <div className="mt-3 rounded border border-indigo-200 bg-white p-3">
+            <h5 className="text-xs font-semibold uppercase tracking-wide text-indigo-900">Last Apply</h5>
+            {lastApply ? (
+              <div className="mt-1 space-y-1 text-xs text-gray-700">
+                <p>
+                  {lastApply.source === 'scheduled' ? 'Scheduled' : 'Manual'} at {timestampToText(lastApply.appliedAt)}
+                </p>
+                <p>
+                  Mood: <span className="font-medium">{lastApply.moodName}</span>
+                </p>
+                <p>Scope: {formatScope(groups, lastApply.groupId)}</p>
+                <p>Result: {summarizeApplyReport(lastApply)}</p>
+                {lastApply.scheduleId ? <p>Schedule: {lastApply.scheduleId}</p> : null}
               </div>
-              {detail ? (
-                <details className="mt-3">
-                  <summary className="cursor-pointer text-sm font-medium text-gray-700 hover:text-gray-900">
-                    Preview And Edit Assignments
-                  </summary>
-                  <div className="mt-3 space-y-3">
-                    {sortedAssignments.map(([label, config]) => (
-                      <div key={`${mood.name}:${label}`} className="rounded border border-slate-200 bg-slate-50 p-3">
-                        <div className="mb-2 flex items-center justify-between gap-2">
-                          <h5 className="text-sm font-semibold text-slate-900">{label}</h5>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              handleRemoveMoodAssignment(mood.name, label);
-                            }}
-                            disabled={sortedAssignments.length <= 1}
-                            className="rounded border border-red-300 px-2 py-0.5 text-xs font-medium text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-400"
-                          >
-                            Remove
-                          </button>
-                        </div>
-                        <LedConfigEditor
-                          config={config}
-                          onChange={(patch) => {
-                            onUpdateMoodAssignment(mood.name, label, patch);
-                          }}
-                        />
+            ) : (
+              <p className="mt-1 text-xs text-gray-600">No applies recorded yet.</p>
+            )}
+          </div>
+
+          <div className="mt-3 grid gap-2 rounded border border-indigo-200 bg-white p-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_120px_220px_auto_auto]">
+            <label className="text-xs font-medium text-gray-700">
+              Mood
+              <select
+                value={scheduleMoodNameInput}
+                onChange={(event) => {
+                  setScheduleMoodNameInput(event.target.value);
+                }}
+                className="mt-1 w-full rounded border border-gray-300 px-2 py-1 text-sm text-gray-900"
+              >
+                {moods.length === 0 ? <option value="">No moods available</option> : null}
+                {moods.map((mood) => (
+                  <option key={`schedule-create-mood:${mood.name}`} value={mood.name}>
+                    {mood.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="text-xs font-medium text-gray-700">
+              Scope
+              <select
+                value={scheduleGroupIdInput}
+                onChange={(event) => {
+                  setScheduleGroupIdInput(event.target.value);
+                }}
+                className="mt-1 w-full rounded border border-gray-300 px-2 py-1 text-sm text-gray-900"
+              >
+                <option value="">All Labeled Endpoints</option>
+                {groups.map((group) => (
+                  <option key={`schedule-create-group:${group.id}`} value={group.id}>
+                    {group.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="text-xs font-medium text-gray-700">
+              Interval (sec)
+              <input
+                type="number"
+                min={60}
+                step={1}
+                value={scheduleIntervalInput}
+                onChange={(event) => {
+                  setScheduleIntervalInput(event.target.value);
+                }}
+                className="mt-1 w-full rounded border border-gray-300 px-2 py-1 text-sm text-gray-900"
+              />
+            </label>
+            <label className="text-xs font-medium text-gray-700">
+              First Run (optional)
+              <input
+                type="datetime-local"
+                step={1}
+                value={scheduleFirstRunInput}
+                onChange={(event) => {
+                  setScheduleFirstRunInput(event.target.value);
+                }}
+                className="mt-1 w-full rounded border border-gray-300 px-2 py-1 text-sm text-gray-900"
+              />
+            </label>
+            <label className="flex items-end gap-2 text-xs font-medium text-gray-700">
+              <input
+                type="checkbox"
+                checked={scheduleEnabledInput}
+                onChange={(event) => {
+                  setScheduleEnabledInput(event.target.checked);
+                }}
+                className="h-4 w-4 rounded border-gray-300"
+              />
+              Enabled
+            </label>
+            <button
+              type="button"
+              onClick={handleCreateSchedule}
+              disabled={moods.length === 0}
+              className="self-end rounded bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-indigo-300"
+            >
+              Add Schedule
+            </button>
+          </div>
+
+          <div className="mt-3 space-y-2">
+            {moodSchedules.length === 0 ? (
+              <p className="text-xs text-gray-700">No schedules configured.</p>
+            ) : (
+              moodSchedules.map((schedule) => {
+                const draft = scheduleDraftsById[schedule.id] ?? toScheduleDraft(schedule);
+                const hasMoodOption = moods.some((mood) => mood.name === draft.moodName);
+                const hasGroupOption = draft.groupId === '' || groups.some((group) => group.id === draft.groupId);
+                return (
+                  <article key={schedule.id} className="rounded border border-indigo-200 bg-white p-3">
+                    <div className="mb-2 flex flex-wrap items-start justify-between gap-2">
+                      <div className="text-xs text-gray-700">
+                        <p className="font-semibold text-gray-900">{schedule.id}</p>
+                        <p>
+                          Next: {timestampToText(schedule.nextRunAt)} ({formatInterval(schedule.intervalSeconds)})
+                        </p>
+                        <p>Last run: {schedule.lastRunAt ? timestampToText(schedule.lastRunAt) : 'Never'}</p>
+                        <p>
+                          Last result: {schedule.lastResult ? summarizeApplyReport(schedule.lastResult) : 'No runs yet'}
+                        </p>
                       </div>
-                    ))}
-                    <div className="rounded border border-dashed border-slate-300 bg-white p-3">
-                      <h5 className="mb-2 text-sm font-semibold text-slate-900">Add Assignment By Clone</h5>
-                      <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
-                        <label className="text-xs font-medium text-slate-700">
-                          Clone Source
-                          <select
-                            value={selectedCloneSource}
-                            onChange={(event) => {
-                              setCloneSourceByMood((previous) => ({
-                                ...previous,
-                                [mood.name]: event.target.value,
-                              }));
-                            }}
-                            className="mt-1 w-full rounded border border-slate-300 px-2 py-1 text-sm text-slate-900"
-                          >
-                            {sortedAssignments.map(([label]) => (
-                              <option key={`clone-source:${mood.name}:${label}`} value={label}>
-                                {label}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                        <label className="text-xs font-medium text-slate-700">
-                          Target Label
-                          <select
-                            value={selectedCloneTarget}
-                            onChange={(event) => {
-                              setCloneTargetByMood((previous) => ({
-                                ...previous,
-                                [mood.name]: event.target.value,
-                              }));
-                            }}
-                            className="mt-1 w-full rounded border border-slate-300 px-2 py-1 text-sm text-slate-900"
-                          >
-                            {cloneTargetOptions.length === 0 ? <option value="">No labels available</option> : null}
-                            {cloneTargetOptions.map((label) => (
-                              <option key={`clone-target:${mood.name}:${label}`} value={label}>
-                                {label}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
+                      <div className="flex flex-wrap gap-2">
                         <button
                           type="button"
                           onClick={() => {
-                            handleCloneMoodAssignment(mood.name, firstLabel, selectedCloneTarget);
+                            handleSaveSchedule(schedule);
                           }}
-                          disabled={firstLabel.length === 0 || selectedCloneTarget.length === 0}
-                          className="self-end rounded border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-400"
+                          className="rounded border border-indigo-300 px-2 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-50"
                         >
-                          Clone Add
+                          Save
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            handleResetScheduleDraft(schedule);
+                          }}
+                          className="rounded border border-gray-300 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                        >
+                          Reset
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            handleDeleteSchedule(schedule);
+                          }}
+                          className="rounded border border-red-300 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
+                        >
+                          Delete
                         </button>
                       </div>
-                      <p className="mt-2 text-xs text-slate-500">Clone copies LED config from an existing label. Mood must keep at least one assignment.</p>
                     </div>
-                  </div>
-                </details>
-              ) : null}
-            </article>
-          );
-        })}
-      </div>
+                    <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_120px_220px_auto]">
+                      <label className="text-xs font-medium text-gray-700">
+                        Mood
+                        <select
+                          value={draft.moodName}
+                          onChange={(event) => {
+                            updateScheduleDraft(schedule.id, { moodName: event.target.value });
+                          }}
+                          className="mt-1 w-full rounded border border-gray-300 px-2 py-1 text-sm text-gray-900"
+                        >
+                          {!hasMoodOption && draft.moodName ? <option value={draft.moodName}>{draft.moodName}</option> : null}
+                          {moods.map((mood) => (
+                            <option key={`schedule-edit-mood:${schedule.id}:${mood.name}`} value={mood.name}>
+                              {mood.name}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="text-xs font-medium text-gray-700">
+                        Scope
+                        <select
+                          value={draft.groupId}
+                          onChange={(event) => {
+                            updateScheduleDraft(schedule.id, { groupId: event.target.value });
+                          }}
+                          className="mt-1 w-full rounded border border-gray-300 px-2 py-1 text-sm text-gray-900"
+                        >
+                          <option value="">All Labeled Endpoints</option>
+                          {!hasGroupOption && draft.groupId ? (
+                            <option value={draft.groupId}>Missing group ({draft.groupId})</option>
+                          ) : null}
+                          {groups.map((group) => (
+                            <option key={`schedule-edit-group:${schedule.id}:${group.id}`} value={group.id}>
+                              {group.name}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="text-xs font-medium text-gray-700">
+                        Interval (sec)
+                        <input
+                          type="number"
+                          min={60}
+                          step={1}
+                          value={draft.intervalSeconds}
+                          onChange={(event) => {
+                            updateScheduleDraft(schedule.id, { intervalSeconds: event.target.value });
+                          }}
+                          className="mt-1 w-full rounded border border-gray-300 px-2 py-1 text-sm text-gray-900"
+                        />
+                      </label>
+                      <label className="text-xs font-medium text-gray-700">
+                        Next Run
+                        <input
+                          type="datetime-local"
+                          step={1}
+                          value={draft.nextRunLocal}
+                          onChange={(event) => {
+                            updateScheduleDraft(schedule.id, { nextRunLocal: event.target.value });
+                          }}
+                          className="mt-1 w-full rounded border border-gray-300 px-2 py-1 text-sm text-gray-900"
+                        />
+                      </label>
+                      <label className="flex items-end gap-2 text-xs font-medium text-gray-700">
+                        <input
+                          type="checkbox"
+                          checked={draft.enabled}
+                          onChange={(event) => {
+                            updateScheduleDraft(schedule.id, { enabled: event.target.checked });
+                          }}
+                          className="h-4 w-4 rounded border-gray-300"
+                        />
+                        Enabled
+                      </label>
+                    </div>
+                  </article>
+                );
+              })
+            )}
+          </div>
+        </div>
+      ) : null}
 
       {statusMessage && <p className="mt-3 text-sm text-gray-700">{statusMessage}</p>}
     </section>

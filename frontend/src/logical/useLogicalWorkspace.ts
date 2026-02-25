@@ -77,6 +77,10 @@ interface RefreshMoodApplyStatusOptions {
   suppressStatus?: boolean;
 }
 
+interface UseLogicalWorkspaceOptions {
+  moodPollingEnabled?: boolean;
+}
+
 const DEFAULT_PIR_ASSIGNMENT = [0, 1, 2, 3] as const;
 
 function normalizeLabel(label: string): string {
@@ -199,7 +203,7 @@ function sortMoodSchedules(schedules: MoodSchedule[]): MoodSchedule[] {
   });
 }
 
-export function useLogicalWorkspace() {
+export function useLogicalWorkspace({ moodPollingEnabled = false }: UseLogicalWorkspaceOptions = {}) {
   const [devices, setDevices] = useState<KnownDevice[]>([]);
   const [resolvedDevicesByName, setResolvedDevicesByName] = useState<Record<string, ResolvedDevice>>({});
   const [aliasesByDevice, setAliasesByDevice] = useState<Record<string, string>>({});
@@ -214,6 +218,9 @@ export function useLogicalWorkspace() {
   const [dirtyMoodDetailsByName, setDirtyMoodDetailsByName] = useState<Record<string, boolean>>({});
   const [moodSchedules, setMoodSchedules] = useState<MoodSchedule[]>([]);
   const [moodApplyStatus, setMoodApplyStatus] = useState<MoodApplyStatus>({ lastApply: null });
+  const [hasLoadedMoods, setHasLoadedMoods] = useState(false);
+  const [hasLoadedMoodSchedules, setHasLoadedMoodSchedules] = useState(false);
+  const [hasLoadedMoodApplyStatus, setHasLoadedMoodApplyStatus] = useState(false);
   const [status, setStatus] = useState<WorkspaceStatus>({ tone: 'idle', message: 'Ready.' });
   const [isBootstrapping, setIsBootstrapping] = useState(true);
   const activeStatusTokenRef = useRef(0);
@@ -223,6 +230,7 @@ export function useLogicalWorkspace() {
   const scheduleRequestTokenRef = useRef(0);
   const applyStatusRequestTokenRef = useRef(0);
   const deviceAbortControllerRef = useRef<AbortController | null>(null);
+  const moodDataLoadInFlightRef = useRef<Promise<boolean> | null>(null);
 
   const endpoints = buildEndpoints(devices, resolvedDevicesByName, labelsByEndpoint);
   const resolvedDevices = useMemo<ResolvedDevice[]>(() => {
@@ -265,6 +273,7 @@ export function useLogicalWorkspace() {
   }, [aliasesByDevice, devices, labelsByEndpoint, persistedAliasesByDevice, persistedLabelsByEndpoint, pirAssignmentsByDevice, persistedPirAssignmentsByDevice]);
   const dirtyLabelDeviceCount = Object.keys(dirtyLabelDevices).length;
   const hasUnsavedLabelChanges = dirtyLabelDeviceCount > 0;
+  const hasLoadedMoodData = hasLoadedMoods && hasLoadedMoodSchedules && hasLoadedMoodApplyStatus;
 
   const setStatusImmediate = useCallback((next: WorkspaceStatus) => {
     activeStatusTokenRef.current += 1;
@@ -404,22 +413,25 @@ export function useLogicalWorkspace() {
     try {
       const list = await getMoodConfigs();
       if (moodRequestTokenRef.current !== requestToken) {
-        return;
+        return false;
       }
 
       setMoods(list.map(toMoodSummary).sort((left, right) => (right.timestamp ?? 0) - (left.timestamp ?? 0)));
+      setHasLoadedMoods(true);
       if (statusToken !== null) {
         settleStatus(statusToken, { tone: 'success', message: `Loaded ${list.length} moods.` });
       }
+      return true;
     } catch (error) {
       if (moodRequestTokenRef.current !== requestToken) {
-        return;
+        return false;
       }
 
       const message = error instanceof Error ? error.message : 'Unknown mood error';
       if (statusToken !== null) {
         settleStatus(statusToken, { tone: 'error', message: `Failed to load moods: ${message}` });
       }
+      return false;
     }
   }, [settleStatus, startStatus]);
 
@@ -458,22 +470,25 @@ export function useLogicalWorkspace() {
     try {
       const schedules = await getMoodSchedules();
       if (scheduleRequestTokenRef.current !== requestToken) {
-        return;
+        return false;
       }
 
       setMoodSchedules(sortMoodSchedules(schedules));
+      setHasLoadedMoodSchedules(true);
       if (statusToken !== null) {
         settleStatus(statusToken, { tone: 'success', message: `Loaded ${schedules.length} schedules.` });
       }
+      return true;
     } catch (error) {
       if (scheduleRequestTokenRef.current !== requestToken) {
-        return;
+        return false;
       }
 
       const message = error instanceof Error ? error.message : 'Unknown schedules error';
       if (statusToken !== null) {
         settleStatus(statusToken, { tone: 'error', message: `Failed to load schedules: ${message}` });
       }
+      return false;
     }
   }, [settleStatus, startStatus]);
 
@@ -485,22 +500,25 @@ export function useLogicalWorkspace() {
     try {
       const nextStatus = await getMoodApplyStatus();
       if (applyStatusRequestTokenRef.current !== requestToken) {
-        return;
+        return false;
       }
 
       setMoodApplyStatus(nextStatus);
+      setHasLoadedMoodApplyStatus(true);
       if (statusToken !== null) {
         settleStatus(statusToken, { tone: 'success', message: 'Loaded mood apply status.' });
       }
+      return true;
     } catch (error) {
       if (applyStatusRequestTokenRef.current !== requestToken) {
-        return;
+        return false;
       }
 
       const message = error instanceof Error ? error.message : 'Unknown mood apply status error';
       if (statusToken !== null) {
         settleStatus(statusToken, { tone: 'error', message: `Failed to load mood apply status: ${message}` });
       }
+      return false;
     }
   }, [settleStatus, startStatus]);
 
@@ -580,10 +598,10 @@ export function useLogicalWorkspace() {
     });
   }
 
-  async function saveLabelsForDevice(deviceName: string): Promise<void> {
+  async function saveLabelsForDevice(deviceName: string): Promise<boolean> {
     const device = devices.find((entry) => entry.name === deviceName);
     if (!device) {
-      return;
+      return false;
     }
 
     const ledNames = Array.from({ length: LED_COUNT }, (_, ledIndex) => {
@@ -617,12 +635,14 @@ export function useLogicalWorkspace() {
         [deviceName]: normalizedAlias,
       }));
       settleStatus(statusToken, { tone: 'success', message: `Saved labels for ${deviceName}.` });
+      return true;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown save error';
       settleStatus(statusToken, {
         tone: 'error',
         message: `Failed to save labels for ${deviceName}: ${message}`,
       });
+      return false;
     }
   }
 
@@ -1097,6 +1117,39 @@ export function useLogicalWorkspace() {
     }
   }
 
+  const ensureMoodDataLoaded = useCallback(async (): Promise<boolean> => {
+    if (hasLoadedMoodData) {
+      return true;
+    }
+    if (moodDataLoadInFlightRef.current) {
+      return moodDataLoadInFlightRef.current;
+    }
+
+    const loadPromise = (async () => {
+      const statusToken = startStatus('Loading mood studio data...');
+      try {
+        const [moodsLoaded, schedulesLoaded, applyStatusLoaded] = await Promise.all([
+          refreshMoods({ suppressStatus: true }),
+          refreshMoodSchedules({ suppressStatus: true }),
+          refreshMoodApplyStatus({ suppressStatus: true }),
+        ]);
+        const loaded = moodsLoaded && schedulesLoaded && applyStatusLoaded;
+        settleStatus(
+          statusToken,
+          loaded
+            ? { tone: 'success', message: 'Mood studio data loaded.' }
+            : { tone: 'error', message: 'Failed to load some mood studio data. Retry refresh.' }
+        );
+        return loaded;
+      } finally {
+        moodDataLoadInFlightRef.current = null;
+      }
+    })();
+
+    moodDataLoadInFlightRef.current = loadPromise;
+    return loadPromise;
+  }, [hasLoadedMoodData, refreshMoodApplyStatus, refreshMoodSchedules, refreshMoods, settleStatus, startStatus]);
+
   useEffect(() => {
     let cancelled = false;
     void (async () => {
@@ -1104,25 +1157,13 @@ export function useLogicalWorkspace() {
       if (cancelled) {
         return;
       }
-      await refreshMoods();
-      if (cancelled) {
-        return;
-      }
       await refreshGroups();
-      if (cancelled) {
-        return;
-      }
-      await refreshMoodSchedules({ suppressStatus: true });
-      if (cancelled) {
-        return;
-      }
-      await refreshMoodApplyStatus({ suppressStatus: true });
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [refreshDevices, refreshMoods, refreshGroups, refreshMoodSchedules, refreshMoodApplyStatus]);
+  }, [refreshDevices, refreshGroups]);
 
   useEffect(
     () => () => {
@@ -1147,6 +1188,9 @@ export function useLogicalWorkspace() {
   }, [hasUnsavedLabelChanges]);
 
   useEffect(() => {
+    if (!moodPollingEnabled || !hasLoadedMoodData) {
+      return;
+    }
     const intervalId = window.setInterval(() => {
       void refreshMoodSchedules({ suppressStatus: true });
       void refreshMoodApplyStatus({ suppressStatus: true });
@@ -1154,7 +1198,7 @@ export function useLogicalWorkspace() {
     return () => {
       window.clearInterval(intervalId);
     };
-  }, [refreshMoodApplyStatus, refreshMoodSchedules]);
+  }, [hasLoadedMoodData, moodPollingEnabled, refreshMoodApplyStatus, refreshMoodSchedules]);
 
   return {
     devices,
@@ -1169,6 +1213,7 @@ export function useLogicalWorkspace() {
     dirtyMoodDetailsByName,
     moodSchedules,
     moodApplyStatus,
+    hasLoadedMoodData,
     status,
     isBootstrapping,
     dirtyLabelDevices,
@@ -1180,6 +1225,7 @@ export function useLogicalWorkspace() {
     refreshGroups,
     refreshMoodSchedules,
     refreshMoodApplyStatus,
+    ensureMoodDataLoaded,
     loadMoodDetail,
     updateMoodAssignment,
     cloneMoodAssignment,
