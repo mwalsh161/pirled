@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLogicalWorkspace } from '../logical/useLogicalWorkspace';
 import { toDeviceUri } from '../logical/types';
 import { PHYSICAL_PIR_COUNT } from '../types';
@@ -8,7 +8,38 @@ import LiveLedControlSection from './workspace/LiveLedControlSection';
 import MoodStudioSection from './workspace/MoodStudioSection';
 import WorkspaceHeaderSection from './workspace/WorkspaceHeaderSection';
 
+type WorkspaceTab = 'setup' | 'live' | 'moods';
+
+const ACTIVE_TAB_STORAGE_KEY = 'pirled:active-workspace-tab';
+const LABEL_SETUP_COMPLETE_STORAGE_KEY = 'pirled:label-setup-complete';
+const LABEL_MATRIX_COLLAPSED_STORAGE_KEY = 'pirled:label-matrix-collapsed';
+
+function readStoredBoolean(key: string): boolean {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+  return window.localStorage.getItem(key) === '1';
+}
+
+function readStoredTab(): WorkspaceTab {
+  if (typeof window === 'undefined') {
+    return 'setup';
+  }
+  const stored = window.localStorage.getItem(ACTIVE_TAB_STORAGE_KEY);
+  if (stored === 'setup' || stored === 'live' || stored === 'moods') {
+    return stored;
+  }
+  return 'setup';
+}
+
 export default function LogicalWorkspace() {
+  const [activeTab, setActiveTab] = useState<WorkspaceTab>(readStoredTab);
+  const [hasCompletedLabelSetup, setHasCompletedLabelSetup] = useState<boolean>(() =>
+    readStoredBoolean(LABEL_SETUP_COMPLETE_STORAGE_KEY)
+  );
+  const [isLabelMatrixCollapsed, setIsLabelMatrixCollapsed] = useState<boolean>(() =>
+    readStoredBoolean(LABEL_MATRIX_COLLAPSED_STORAGE_KEY)
+  );
   const {
     devices,
     resolvedDevices,
@@ -22,6 +53,7 @@ export default function LogicalWorkspace() {
     dirtyMoodDetailsByName,
     moodSchedules,
     moodApplyStatus,
+    hasLoadedMoodData,
     status,
     isBootstrapping,
     dirtyLabelDevices,
@@ -32,6 +64,7 @@ export default function LogicalWorkspace() {
     refreshMoods,
     refreshMoodSchedules,
     refreshMoodApplyStatus,
+    ensureMoodDataLoaded,
     loadMoodDetail,
     updateMoodAssignment,
     cloneMoodAssignment,
@@ -49,7 +82,48 @@ export default function LogicalWorkspace() {
     saveMood,
     applyMood,
     removeMood,
-  } = useLogicalWorkspace();
+  } = useLogicalWorkspace({ moodPollingEnabled: activeTab === 'moods' });
+
+  useEffect(() => {
+    window.localStorage.setItem(ACTIVE_TAB_STORAGE_KEY, activeTab);
+  }, [activeTab]);
+
+  useEffect(() => {
+    window.localStorage.setItem(LABEL_SETUP_COMPLETE_STORAGE_KEY, hasCompletedLabelSetup ? '1' : '0');
+  }, [hasCompletedLabelSetup]);
+
+  useEffect(() => {
+    window.localStorage.setItem(LABEL_MATRIX_COLLAPSED_STORAGE_KEY, isLabelMatrixCollapsed ? '1' : '0');
+  }, [isLabelMatrixCollapsed]);
+
+  useEffect(() => {
+    if (activeTab !== 'moods' || hasLoadedMoodData) {
+      return;
+    }
+    void ensureMoodDataLoaded();
+  }, [activeTab, ensureMoodDataLoaded, hasLoadedMoodData]);
+
+  const handleSaveLabelsForDevice = useCallback(
+    async (deviceName: string): Promise<boolean> => {
+      const saved = await saveLabelsForDevice(deviceName);
+      if (saved) {
+        if (!hasCompletedLabelSetup) {
+          setHasCompletedLabelSetup(true);
+        }
+        setIsLabelMatrixCollapsed(true);
+      }
+      return saved;
+    },
+    [hasCompletedLabelSetup, saveLabelsForDevice]
+  );
+
+  const tabButtonClass = (tab: WorkspaceTab) =>
+    `rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors ${
+      activeTab === tab
+        ? 'border-blue-600 bg-blue-600 text-white'
+        : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+    }`;
+
   const activeEndpoints = endpoints.filter((endpoint) => endpoint.label.trim().length > 0);
   const resolvedDeviceNameSet = new Set(resolvedDevices.map((device) => device.name));
   const liveEndpoints = activeEndpoints.filter((endpoint) => resolvedDeviceNameSet.has(endpoint.deviceName));
@@ -87,48 +161,89 @@ export default function LogicalWorkspace() {
         dirtyLabelDeviceCount={dirtyLabelDeviceCount}
         onRefreshDevices={refreshDevices}
         onDiscoverDevices={discoverDevices}
-        onRefreshMoods={refreshMoods}
+        onRefreshMoods={async () => {
+          await refreshMoods();
+        }}
       />
-      <LabelMatrixSection
-        devices={devices}
-        endpoints={endpoints}
-        aliasesByDevice={aliasesByDevice}
-        pirAssignmentsByDevice={pirAssignmentsByDevice}
-        dirtyLabelDevices={dirtyLabelDevices}
-        onUpdateLabel={updateLabel}
-        onUpdateAlias={updateAlias}
-        onAssignDefaultPir={assignDefaultPir}
-        onSaveLabelsForDevice={saveLabelsForDevice}
-      />
-      <LiveLedControlSection
-        devices={resolvedDevices}
-        endpoints={liveEndpoints}
-        groups={groups}
-        pirLabelsByDeviceUri={pirLabelsByDeviceUri}
-      />
-      <GroupsSection labels={labels} groups={groups} onCreateGroup={createGroup} onDeleteGroup={deleteGroup} />
-      <MoodStudioSection
-        labels={labels}
-        groups={groups}
-        moods={moods}
-        moodDetails={moodDetails}
-        dirtyMoodDetailsByName={dirtyMoodDetailsByName}
-        moodSchedules={moodSchedules}
-        moodApplyStatus={moodApplyStatus}
-        onSaveMood={saveMood}
-        onLoadMoodDetail={loadMoodDetail}
-        onUpdateMoodAssignment={updateMoodAssignment}
-        onCloneMoodAssignment={cloneMoodAssignment}
-        onRemoveMoodAssignment={removeMoodAssignment}
-        onSaveMoodDetail={saveMoodDetail}
-        onApplyMood={applyMood}
-        onRemoveMood={removeMood}
-        onRefreshMoodSchedules={refreshMoodSchedules}
-        onRefreshMoodApplyStatus={refreshMoodApplyStatus}
-        onCreateMoodSchedule={createMoodSchedule}
-        onUpdateMoodSchedule={updateMoodSchedule}
-        onDeleteMoodSchedule={deleteMoodSchedule}
-      />
+      <section className="rounded-lg border bg-white p-4 shadow-sm">
+        <div className="flex flex-wrap items-center gap-2">
+          <button type="button" onClick={() => setActiveTab('setup')} className={tabButtonClass('setup')}>
+            Setup
+          </button>
+          <button type="button" onClick={() => setActiveTab('live')} className={tabButtonClass('live')}>
+            Live
+          </button>
+          <button type="button" onClick={() => setActiveTab('moods')} className={tabButtonClass('moods')}>
+            Moods
+          </button>
+        </div>
+      </section>
+
+      {activeTab === 'setup' ? (
+        <div className="space-y-6">
+          <LabelMatrixSection
+            devices={devices}
+            endpoints={endpoints}
+            aliasesByDevice={aliasesByDevice}
+            pirAssignmentsByDevice={pirAssignmentsByDevice}
+            dirtyLabelDevices={dirtyLabelDevices}
+            isMatrixCollapsed={isLabelMatrixCollapsed}
+            hasCompletedLabelSetup={hasCompletedLabelSetup}
+            onSetMatrixCollapsed={setIsLabelMatrixCollapsed}
+            onUpdateLabel={updateLabel}
+            onUpdateAlias={updateAlias}
+            onAssignDefaultPir={assignDefaultPir}
+            onSaveLabelsForDevice={handleSaveLabelsForDevice}
+          />
+          <GroupsSection labels={labels} groups={groups} onCreateGroup={createGroup} onDeleteGroup={deleteGroup} />
+        </div>
+      ) : null}
+
+      {activeTab === 'live' ? (
+        <LiveLedControlSection
+          knownDevices={devices}
+          devices={resolvedDevices}
+          endpoints={liveEndpoints}
+          groups={groups}
+          pirLabelsByDeviceUri={pirLabelsByDeviceUri}
+        />
+      ) : null}
+
+      {activeTab === 'moods' ? (
+        <div className="space-y-3">
+          {!hasLoadedMoodData ? (
+            <section className="rounded-lg border bg-white p-5 shadow-sm">
+              <p className="text-sm text-gray-600">Loading mood studio data...</p>
+            </section>
+          ) : null}
+          <MoodStudioSection
+            labels={labels}
+            groups={groups}
+            moods={moods}
+            moodDetails={moodDetails}
+            dirtyMoodDetailsByName={dirtyMoodDetailsByName}
+            moodSchedules={moodSchedules}
+            moodApplyStatus={moodApplyStatus}
+            onSaveMood={saveMood}
+            onLoadMoodDetail={loadMoodDetail}
+            onUpdateMoodAssignment={updateMoodAssignment}
+            onCloneMoodAssignment={cloneMoodAssignment}
+            onRemoveMoodAssignment={removeMoodAssignment}
+            onSaveMoodDetail={saveMoodDetail}
+            onApplyMood={applyMood}
+            onRemoveMood={removeMood}
+            onRefreshMoodSchedules={async () => {
+              await refreshMoodSchedules();
+            }}
+            onRefreshMoodApplyStatus={async () => {
+              await refreshMoodApplyStatus();
+            }}
+            onCreateMoodSchedule={createMoodSchedule}
+            onUpdateMoodSchedule={updateMoodSchedule}
+            onDeleteMoodSchedule={deleteMoodSchedule}
+          />
+        </div>
+      ) : null}
     </div>
   );
 }
