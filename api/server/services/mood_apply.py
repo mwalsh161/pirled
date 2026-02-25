@@ -29,9 +29,9 @@ def _apply_led_config(device_uri: str, led_index: int, config: dict[str, int]) -
         pass
 
 
-def _resolve_allowed_labels(group_id: str | None) -> set[str] | None:
+def _resolve_allowed_labels(group_id: str | None) -> set[str]:
     if not group_id:
-        return None
+        return set()
     group = get_group_by_id(group_id)
     if group is None:
         raise FileNotFoundError("Group not found")
@@ -64,7 +64,7 @@ def apply_mood_by_name(name: str, group_id: str | None) -> ApplyReport:
             label = normalize_label(raw_label)
             if not label:
                 continue
-            if allowed_labels is not None and label not in allowed_labels:
+            if group_id and label not in allowed_labels:
                 continue
 
             config = assignments_by_label.get(label)
