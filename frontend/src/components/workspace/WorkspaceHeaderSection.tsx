@@ -7,7 +7,7 @@ interface WorkspaceHeaderSectionProps {
   status: WorkspaceStatus;
   hasUnsavedLabelChanges: boolean;
   dirtyLabelDeviceCount: number;
-  onRefreshDevices: () => Promise<void>;
+  showRefreshMoods: boolean;
   onDiscoverDevices: () => Promise<void>;
   onRefreshMoods: () => Promise<void>;
 }
@@ -29,7 +29,7 @@ export default function WorkspaceHeaderSection({
   status,
   hasUnsavedLabelChanges,
   dirtyLabelDeviceCount,
-  onRefreshDevices,
+  showRefreshMoods,
   onDiscoverDevices,
   onRefreshMoods,
 }: WorkspaceHeaderSectionProps) {
@@ -46,30 +46,23 @@ export default function WorkspaceHeaderSection({
           <button
             type="button"
             onClick={() => {
-              void onRefreshDevices();
-            }}
-            className="rounded border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-          >
-            Reload Known
-          </button>
-          <button
-            type="button"
-            onClick={() => {
               void onDiscoverDevices();
             }}
             className="rounded bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
           >
             Discover Devices
           </button>
-          <button
-            type="button"
-            onClick={() => {
-              void onRefreshMoods();
-            }}
-            className="rounded border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-          >
-            Refresh Moods
-          </button>
+          {showRefreshMoods ? (
+            <button
+              type="button"
+              onClick={() => {
+                void onRefreshMoods();
+              }}
+              className="rounded border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            >
+              Refresh Moods
+            </button>
+          ) : null}
         </div>
       </div>
       <div className="mt-3 flex min-h-5 items-center gap-2 text-xs text-amber-700">

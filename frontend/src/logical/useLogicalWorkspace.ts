@@ -67,6 +67,7 @@ interface RefreshGroupsOptions {
 
 interface RefreshDevicesOptions {
   discover?: boolean;
+  preserveExistingState?: boolean;
 }
 
 interface RefreshMoodSchedulesOptions {
@@ -349,14 +350,90 @@ export function useLogicalWorkspace({ moodPollingEnabled = false }: UseLogicalWo
         return;
       }
 
-      setDevices(sorted);
-      setResolvedDevicesByName({});
-      setAliasesByDevice(nextAliases);
-      setPersistedAliasesByDevice(nextAliases);
-      setLabelsByEndpoint(nextLabels);
-      setPersistedLabelsByEndpoint(nextLabels);
-      setPirAssignmentsByDevice(nextPirAssignments);
-      setPersistedPirAssignmentsByDevice(nextPirAssignments);
+      const preserveExistingState = options.preserveExistingState ?? options.discover ?? false;
+      if (preserveExistingState) {
+        const discoveredDeviceNameSet = new Set(sorted.map((device) => device.name));
+
+        setDevices((previous) =>
+          sorted.map((device) => {
+            const existing = previous.find((entry) => entry.name === device.name);
+            if (!existing) {
+              return device;
+            }
+            return {
+              ...device,
+              alias: existing.alias,
+              resolved: existing.resolved,
+            };
+          })
+        );
+        setResolvedDevicesByName((previous) => {
+          const next: Record<string, ResolvedDevice> = {};
+          for (const [deviceName, resolved] of Object.entries(previous)) {
+            if (discoveredDeviceNameSet.has(deviceName)) {
+              next[deviceName] = resolved;
+            }
+          }
+          return next;
+        });
+        setAliasesByDevice((previous) => {
+          const next: Record<string, string> = {};
+          for (const device of sorted) {
+            next[device.name] = previous[device.name] ?? nextAliases[device.name] ?? device.alias;
+          }
+          return next;
+        });
+        setPersistedAliasesByDevice((previous) => {
+          const next: Record<string, string> = {};
+          for (const device of sorted) {
+            next[device.name] = previous[device.name] ?? nextAliases[device.name] ?? device.alias;
+          }
+          return next;
+        });
+        setLabelsByEndpoint((previous) => {
+          const next: Record<string, string> = {};
+          for (const device of sorted) {
+            for (let ledIndex = 0; ledIndex < LED_COUNT; ledIndex += 1) {
+              const id = endpointId(device.name, ledIndex);
+              next[id] = previous[id] ?? nextLabels[id] ?? '';
+            }
+          }
+          return next;
+        });
+        setPersistedLabelsByEndpoint((previous) => {
+          const next: Record<string, string> = {};
+          for (const device of sorted) {
+            for (let ledIndex = 0; ledIndex < LED_COUNT; ledIndex += 1) {
+              const id = endpointId(device.name, ledIndex);
+              next[id] = previous[id] ?? nextLabels[id] ?? '';
+            }
+          }
+          return next;
+        });
+        setPirAssignmentsByDevice((previous) => {
+          const next: Record<string, number[]> = {};
+          for (const device of sorted) {
+            next[device.name] = previous[device.name] ?? nextPirAssignments[device.name] ?? [0, 1, 2, 3];
+          }
+          return next;
+        });
+        setPersistedPirAssignmentsByDevice((previous) => {
+          const next: Record<string, number[]> = {};
+          for (const device of sorted) {
+            next[device.name] = previous[device.name] ?? nextPirAssignments[device.name] ?? [0, 1, 2, 3];
+          }
+          return next;
+        });
+      } else {
+        setDevices(sorted);
+        setResolvedDevicesByName({});
+        setAliasesByDevice(nextAliases);
+        setPersistedAliasesByDevice(nextAliases);
+        setLabelsByEndpoint(nextLabels);
+        setPersistedLabelsByEndpoint(nextLabels);
+        setPirAssignmentsByDevice(nextPirAssignments);
+        setPersistedPirAssignmentsByDevice(nextPirAssignments);
+      }
       settleStatus(statusToken, { tone: 'success', message: `Loaded ${sorted.length} known devices.` });
 
       void (async () => {
@@ -523,7 +600,7 @@ export function useLogicalWorkspace({ moodPollingEnabled = false }: UseLogicalWo
   }, [settleStatus, startStatus]);
 
   const discoverDevices = useCallback(async () => {
-    await refreshDevices({ discover: true });
+    await refreshDevices({ discover: true, preserveExistingState: true });
   }, [refreshDevices]);
 
   async function loadMoodDetail(name: string): Promise<MoodDetail> {

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLogicalWorkspace } from '../logical/useLogicalWorkspace';
 import { toDeviceUri } from '../logical/types';
 import { PHYSICAL_PIR_COUNT } from '../types';
+import { useDeviceSnapshotPolling } from '../live/useDeviceSnapshotPolling';
 import GroupsSection from './workspace/GroupsSection';
 import LabelMatrixSection from './workspace/LabelMatrixSection';
 import LiveLedControlSection from './workspace/LiveLedControlSection';
@@ -12,7 +13,7 @@ type WorkspaceTab = 'setup' | 'live' | 'moods';
 
 const ACTIVE_TAB_STORAGE_KEY = 'pirled:active-workspace-tab';
 const LABEL_SETUP_COMPLETE_STORAGE_KEY = 'pirled:label-setup-complete';
-const LABEL_MATRIX_COLLAPSED_STORAGE_KEY = 'pirled:label-matrix-collapsed';
+const SETUP_POLL_INTERVAL_MS = 750;
 
 function readStoredBoolean(key: string): boolean {
   if (typeof window === 'undefined') {
@@ -37,9 +38,7 @@ export default function LogicalWorkspace() {
   const [hasCompletedLabelSetup, setHasCompletedLabelSetup] = useState<boolean>(() =>
     readStoredBoolean(LABEL_SETUP_COMPLETE_STORAGE_KEY)
   );
-  const [isLabelMatrixCollapsed, setIsLabelMatrixCollapsed] = useState<boolean>(() =>
-    readStoredBoolean(LABEL_MATRIX_COLLAPSED_STORAGE_KEY)
-  );
+  const [setupActiveDeviceUri, setSetupActiveDeviceUri] = useState<string | null>(null);
   const {
     devices,
     resolvedDevices,
@@ -59,7 +58,6 @@ export default function LogicalWorkspace() {
     dirtyLabelDevices,
     dirtyLabelDeviceCount,
     hasUnsavedLabelChanges,
-    refreshDevices,
     discoverDevices,
     refreshMoods,
     refreshMoodSchedules,
@@ -93,10 +91,6 @@ export default function LogicalWorkspace() {
   }, [hasCompletedLabelSetup]);
 
   useEffect(() => {
-    window.localStorage.setItem(LABEL_MATRIX_COLLAPSED_STORAGE_KEY, isLabelMatrixCollapsed ? '1' : '0');
-  }, [isLabelMatrixCollapsed]);
-
-  useEffect(() => {
     if (activeTab !== 'moods' || hasLoadedMoodData) {
       return;
     }
@@ -110,7 +104,6 @@ export default function LogicalWorkspace() {
         if (!hasCompletedLabelSetup) {
           setHasCompletedLabelSetup(true);
         }
-        setIsLabelMatrixCollapsed(true);
       }
       return saved;
     },
@@ -125,6 +118,27 @@ export default function LogicalWorkspace() {
     }`;
 
   const activeEndpoints = endpoints.filter((endpoint) => endpoint.label.trim().length > 0);
+  const resolvedDevicesByName = useMemo(() => {
+    const next: Record<string, (typeof resolvedDevices)[number]> = {};
+    for (const device of resolvedDevices) {
+      next[device.name] = device;
+    }
+    return next;
+  }, [resolvedDevices]);
+  const setupPollingDeviceUris = useMemo(
+    () => (activeTab === 'setup' && setupActiveDeviceUri ? [setupActiveDeviceUri] : []),
+    [activeTab, setupActiveDeviceUri]
+  );
+  const {
+    snapshotsByDeviceUri: setupSnapshotsByDeviceUri,
+    deviceHealthByUri: setupDeviceHealthByUri,
+    retryDevice: retrySetupDevice,
+  } = useDeviceSnapshotPolling({
+    devices: resolvedDevices,
+    autoRefreshEnabled: activeTab === 'setup',
+    pollIntervalMs: SETUP_POLL_INTERVAL_MS,
+    activePollingDeviceUris: setupPollingDeviceUris,
+  });
   const resolvedDeviceNameSet = new Set(resolvedDevices.map((device) => device.name));
   const liveEndpoints = activeEndpoints.filter((endpoint) => resolvedDeviceNameSet.has(endpoint.deviceName));
   const pirLabelsByDeviceUri = useMemo(() => {
@@ -159,7 +173,7 @@ export default function LogicalWorkspace() {
         status={status}
         hasUnsavedLabelChanges={hasUnsavedLabelChanges}
         dirtyLabelDeviceCount={dirtyLabelDeviceCount}
-        onRefreshDevices={refreshDevices}
+        showRefreshMoods={activeTab === 'moods'}
         onDiscoverDevices={discoverDevices}
         onRefreshMoods={async () => {
           await refreshMoods();
@@ -187,9 +201,18 @@ export default function LogicalWorkspace() {
             aliasesByDevice={aliasesByDevice}
             pirAssignmentsByDevice={pirAssignmentsByDevice}
             dirtyLabelDevices={dirtyLabelDevices}
-            isMatrixCollapsed={isLabelMatrixCollapsed}
+            resolvedDevicesByName={resolvedDevicesByName}
+            snapshotsByDeviceUri={setupSnapshotsByDeviceUri}
+            deviceHealthByUri={setupDeviceHealthByUri}
             hasCompletedLabelSetup={hasCompletedLabelSetup}
-            onSetMatrixCollapsed={setIsLabelMatrixCollapsed}
+            onSetActiveDeviceUri={setSetupActiveDeviceUri}
+            onRetryDevice={(deviceName) => {
+              const resolved = resolvedDevicesByName[deviceName];
+              if (!resolved) {
+                return;
+              }
+              void retrySetupDevice(resolved);
+            }}
             onUpdateLabel={updateLabel}
             onUpdateAlias={updateAlias}
             onAssignDefaultPir={assignDefaultPir}

@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { type LedConfig, type LedConfigUpdate } from '../../types';
+import PirChipGroup from '../ui/PirChipGroup';
+import { isMaskEnabled } from '../ui/pir';
 
 const BRIGHTNESS_MIN = 0;
 const BRIGHTNESS_MAX = 1023;
@@ -38,18 +40,6 @@ function toPercent(value: number): number {
 function parseNumber(input: string, fallback: number): number {
   const next = Number(input);
   return Number.isFinite(next) ? Math.trunc(next) : fallback;
-}
-
-function getPirLabel(physicalPirLabels: string[], pirIndex: number): string {
-  if (pirIndex >= 4) {
-    return `PIR V${pirIndex - 4}`;
-  }
-  const configuredLabel = physicalPirLabels[pirIndex]?.trim() ?? '';
-  return configuredLabel.length > 0 ? configuredLabel : `PIR ${pirIndex}`;
-}
-
-function isMaskEnabled(mask: number, pirIndex: number): boolean {
-  return (mask & (1 << pirIndex)) !== 0;
 }
 
 export default function LedConfigEditor({
@@ -168,30 +158,15 @@ export default function LedConfigEditor({
                 <span>{entry.label}</span>
                 <span className="font-semibold text-slate-900">{entry.mask}</span>
               </div>
-              <div className="flex flex-wrap gap-1">
-                {Array.from({ length: TOTAL_PIR_COUNT }).map((__, pirIndex) => {
-                  const enabled = isMaskEnabled(entry.mask, pirIndex);
-                  const triggered = isMaskEnabled(pirState, pirIndex);
-                  return (
-                    <button
-                      key={`${entry.key}:${pirIndex}`}
-                      type="button"
-                      aria-pressed={enabled}
-                      onClick={() => {
-                        togglePirMask(entry.key, entry.mask, pirIndex);
-                      }}
-                      className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-xs transition ${
-                        enabled
-                          ? 'border-emerald-300 bg-emerald-50 text-emerald-900'
-                          : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
-                      } ${triggered ? 'ring-1 ring-rose-300' : ''}`}
-                    >
-                      <span className={`h-1.5 w-1.5 rounded-full ${enabled ? 'bg-emerald-500' : 'bg-slate-300'}`} />
-                      {getPirLabel(physicalPirLabels, pirIndex)}
-                    </button>
-                  );
-                })}
-              </div>
+              <PirChipGroup
+                count={TOTAL_PIR_COUNT}
+                labels={physicalPirLabels}
+                isSelected={(pirIndex) => isMaskEnabled(entry.mask, pirIndex)}
+                isActive={(pirIndex) => isMaskEnabled(pirState, pirIndex)}
+                onSelect={(pirIndex) => {
+                  togglePirMask(entry.key, entry.mask, pirIndex);
+                }}
+              />
             </div>
           ))}
         </div>
