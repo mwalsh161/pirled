@@ -1,9 +1,10 @@
-import { type ResolvedDevice } from '../../../types';
+import { type KnownDevice, type ResolvedDevice } from '../../../types';
 import { type DeviceLiveHealth } from '../../../live/useLiveLedTransport';
 import { toDeviceUri } from '../../../logical/types';
 
 interface DeviceHealthStripProps {
-  devices: ResolvedDevice[];
+  knownDevices: KnownDevice[];
+  resolvedDevicesByName: Record<string, ResolvedDevice>;
   deviceHealthByUri: Record<string, DeviceLiveHealth>;
   persistingByDeviceUri: Record<string, boolean>;
   pausedByDeviceUri: Record<string, boolean>;
@@ -11,7 +12,7 @@ interface DeviceHealthStripProps {
   onRetryDevice: (device: ResolvedDevice) => void;
 }
 
-type DisplayTone = DeviceLiveHealth['tone'] | 'paused';
+type DisplayTone = DeviceLiveHealth['tone'] | 'paused' | 'unresolved';
 
 function healthClass(tone: DisplayTone): string {
   if (tone === 'ok') {
@@ -28,6 +29,9 @@ function healthClass(tone: DisplayTone): string {
   }
   if (tone === 'working') {
     return 'border-sky-200 bg-sky-50 text-sky-800';
+  }
+  if (tone === 'unresolved') {
+    return 'border-slate-300 bg-slate-100 text-slate-700';
   }
   return 'border-slate-200 bg-slate-50 text-slate-700';
 }
@@ -48,6 +52,9 @@ function toneDotClass(tone: DisplayTone): string {
   if (tone === 'working') {
     return 'bg-sky-500';
   }
+  if (tone === 'unresolved') {
+    return 'bg-slate-400';
+  }
   return 'bg-slate-400';
 }
 
@@ -60,7 +67,8 @@ function secondsAgo(timestamp?: number): string {
 }
 
 export default function DeviceHealthStrip({
-  devices,
+  knownDevices,
+  resolvedDevicesByName,
   deviceHealthByUri,
   persistingByDeviceUri,
   pausedByDeviceUri,
@@ -70,10 +78,29 @@ export default function DeviceHealthStrip({
   return (
     <div className="sticky top-2 z-20 rounded-xl border border-slate-200 bg-white/95 p-2 shadow-sm backdrop-blur">
       <div className="flex flex-wrap gap-2">
-        {devices.map((device) => {
-          const deviceUri = toDeviceUri(device);
-          const trimmedAlias = device.alias.trim();
-          const deviceDisplayName = trimmedAlias.length > 0 ? trimmedAlias : device.name;
+        {knownDevices.map((knownDevice) => {
+          const resolvedDevice = resolvedDevicesByName[knownDevice.name];
+          const trimmedAlias = knownDevice.alias.trim();
+          const deviceDisplayName = trimmedAlias.length > 0 ? trimmedAlias : knownDevice.name;
+          if (!resolvedDevice) {
+            return (
+              <div
+                key={knownDevice.name}
+                className={`min-w-44 rounded-lg border px-2.5 py-1.5 text-xs font-medium shadow-sm ${healthClass('unresolved')}`}
+              >
+                <div className="flex items-center gap-1.5 font-semibold">
+                  <span className={`inline-block h-2 w-2 rounded-full ${toneDotClass('unresolved')}`} />
+                  <span className="truncate">{deviceDisplayName}</span>
+                </div>
+                <div className="mt-0.5 text-[11px] opacity-80">unresolved | q:0 | last never</div>
+                <div className="mt-1 rounded border border-slate-300 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-600">
+                  Not reachable
+                </div>
+              </div>
+            );
+          }
+
+          const deviceUri = toDeviceUri(resolvedDevice);
           const health = deviceHealthByUri[deviceUri];
           const isPaused = pausedByDeviceUri[deviceUri] ?? false;
           const queueDepth = health?.queueDepth ?? 0;
@@ -95,7 +122,7 @@ export default function DeviceHealthStrip({
                     : 'idle';
           return (
             <div
-              key={deviceUri}
+              key={knownDevice.name}
               className={`min-w-44 rounded-lg border px-2.5 py-1.5 text-xs font-medium shadow-sm ${healthClass(tone)}`}
             >
               <div className="flex items-center gap-1.5 font-semibold">
@@ -109,7 +136,7 @@ export default function DeviceHealthStrip({
                 <button
                   type="button"
                   onClick={() => {
-                    onPersistDevice(device);
+                    onPersistDevice(resolvedDevice);
                   }}
                   disabled={isPersisting || isOffline}
                   className="rounded border border-slate-300 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-400"
@@ -120,7 +147,7 @@ export default function DeviceHealthStrip({
                   <button
                     type="button"
                     onClick={() => {
-                      onRetryDevice(device);
+                      onRetryDevice(resolvedDevice);
                     }}
                     className="ml-1 rounded border border-amber-300 bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800 hover:bg-amber-200"
                   >

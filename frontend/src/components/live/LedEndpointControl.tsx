@@ -2,14 +2,12 @@ import { memo } from 'react';
 import { type LedEndpoint } from '../../logical/types';
 import { type LedConfig, type LedConfigUpdate, type LedState } from '../../types';
 import LedConfigEditor from './LedConfigEditor';
-import LedConfigStatus from './LedConfigStatus';
 import { DirtyBadge } from '../ui/dirtyState';
 
 const STATE_LABELS = ['OFF', 'WAITING_ON', 'ON', 'WAITING_OFF'] as const;
 
 interface LedEndpointControlProps {
   endpoint: LedEndpoint;
-  baselineConfig: LedConfig;
   draftConfig: LedConfig;
   liveState: LedState;
   pirState: number;
@@ -36,7 +34,6 @@ function statePillClass(state: number): string {
 
 function LedEndpointControl({
   endpoint,
-  baselineConfig,
   draftConfig,
   liveState,
   pirState,
@@ -79,13 +76,6 @@ function LedEndpointControl({
           }}
         />
 
-        <details className="mt-1">
-          <summary className="cursor-pointer text-xs text-slate-500 hover:text-slate-700">
-            Baseline config snapshot
-          </summary>
-          <LedConfigStatus config={baselineConfig} pirState={pirState} physicalPirLabels={physicalPirLabels} className="mt-2" />
-        </details>
-
         <div className="flex gap-2 pt-1">
           <button
             type="button"
@@ -119,7 +109,6 @@ function areEqual(left: LedEndpointControlProps, right: LedEndpointControlProps)
     left.endpoint.label === right.endpoint.label &&
     left.endpoint.deviceName === right.endpoint.deviceName &&
     left.endpoint.ledIndex === right.endpoint.ledIndex &&
-    left.baselineConfig === right.baselineConfig &&
     left.draftConfig === right.draftConfig &&
     left.liveState === right.liveState &&
     left.pirState === right.pirState &&

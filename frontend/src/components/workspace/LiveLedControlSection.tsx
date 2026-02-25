@@ -3,11 +3,12 @@ import DeviceHealthStrip from './live/DeviceHealthStrip';
 import LogicalEndpointSections from './live/LogicalEndpointSections';
 import { useLiveLedTransport } from '../../live/useLiveLedTransport';
 import { toDeviceUri, type LedEndpoint, type LogicalGroup } from '../../logical/types';
-import { type ResolvedDevice } from '../../types';
+import { type KnownDevice, type ResolvedDevice } from '../../types';
 
 const POLL_INTERVAL_MS = 750;
 
 interface LiveLedControlSectionProps {
+  knownDevices: KnownDevice[];
   devices: ResolvedDevice[];
   endpoints: LedEndpoint[];
   groups: LogicalGroup[];
@@ -72,7 +73,13 @@ function buildVisibleDeviceUris(
   return Array.from(visibleDeviceUris).sort();
 }
 
-export default function LiveLedControlSection({ devices, endpoints, groups, pirLabelsByDeviceUri }: LiveLedControlSectionProps) {
+export default function LiveLedControlSection({
+  knownDevices,
+  devices,
+  endpoints,
+  groups,
+  pirLabelsByDeviceUri,
+}: LiveLedControlSectionProps) {
   const [isAutoRefreshEnabled, setIsAutoRefreshEnabled] = useState(true);
   const [collapsedGroupIds, setCollapsedGroupIds] = useState<string[]>([]);
 
@@ -87,6 +94,14 @@ export default function LiveLedControlSection({ devices, endpoints, groups, pirL
     [endpoints, groups, collapsedGroupIdSet]
   );
   const visibleDeviceUriSet = useMemo(() => new Set(visibleDeviceUris), [visibleDeviceUris]);
+  const unresolvedCount = Math.max(0, knownDevices.length - devices.length);
+  const resolvedDevicesByName = useMemo(() => {
+    const next: Record<string, ResolvedDevice> = {};
+    for (const device of devices) {
+      next[device.name] = device;
+    }
+    return next;
+  }, [devices]);
 
   const pausedByDeviceUri = useMemo<Record<string, boolean>>(() => {
     const next: Record<string, boolean> = {};
@@ -135,7 +150,10 @@ export default function LiveLedControlSection({ devices, endpoints, groups, pirL
           <p className="text-sm text-slate-600">Logical-first live control with per-device transport status.</p>
           <div className="flex flex-wrap gap-1.5 text-xs">
             <span className="rounded-full border border-slate-300 bg-white px-2 py-0.5 text-slate-600">
-              Devices: {devices.length}
+              Resolved: {devices.length}
+            </span>
+            <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-amber-700">
+              Unresolved: {unresolvedCount}
             </span>
             <span className="rounded-full border border-slate-300 bg-white px-2 py-0.5 text-slate-600">
               Visible: {visibleDeviceUris.length}
@@ -173,14 +191,15 @@ export default function LiveLedControlSection({ devices, endpoints, groups, pirL
         </div>
       </div>
 
-      {devices.length === 0 ? (
+      {knownDevices.length === 0 ? (
         <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-4 text-sm text-slate-600">
-          No resolved devices available yet. Discover devices and retry resolution.
+          No known devices available yet. Discover devices to start.
         </div>
       ) : (
         <div className="space-y-6">
           <DeviceHealthStrip
-            devices={devices}
+            knownDevices={knownDevices}
+            resolvedDevicesByName={resolvedDevicesByName}
             deviceHealthByUri={deviceHealthByUri}
             persistingByDeviceUri={persistingByDeviceUri}
             pausedByDeviceUri={pausedByDeviceUri}
@@ -191,20 +210,26 @@ export default function LiveLedControlSection({ devices, endpoints, groups, pirL
               void retryDevice(device);
             }}
           />
-          <LogicalEndpointSections
-            endpoints={endpoints}
-            groups={groups}
-            collapsedGroupIds={collapsedGroupIdSet}
-            onToggleGroupCollapse={toggleGroupCollapse}
-            pirLabelsByDeviceUri={pirLabelsByDeviceUri}
-            snapshotsByDeviceUri={snapshotsByDeviceUri}
-            draftByEndpointId={draftByEndpointId}
-            dirtyByEndpointId={dirtyByEndpointId}
-            pendingByEndpointId={pendingByEndpointId}
-            onDraftChange={updateEndpointDraft}
-            onApply={applyEndpoint}
-            onReset={resetEndpoint}
-          />
+          {devices.length === 0 ? (
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-4 text-sm text-slate-600">
+              No resolved devices available yet. Discover devices and retry resolution.
+            </div>
+          ) : (
+            <LogicalEndpointSections
+              endpoints={endpoints}
+              groups={groups}
+              collapsedGroupIds={collapsedGroupIdSet}
+              onToggleGroupCollapse={toggleGroupCollapse}
+              pirLabelsByDeviceUri={pirLabelsByDeviceUri}
+              snapshotsByDeviceUri={snapshotsByDeviceUri}
+              draftByEndpointId={draftByEndpointId}
+              dirtyByEndpointId={dirtyByEndpointId}
+              pendingByEndpointId={pendingByEndpointId}
+              onDraftChange={updateEndpointDraft}
+              onApply={applyEndpoint}
+              onReset={resetEndpoint}
+            />
+          )}
         </div>
       )}
     </section>

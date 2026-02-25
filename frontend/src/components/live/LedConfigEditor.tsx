@@ -48,6 +48,10 @@ function getPirLabel(physicalPirLabels: string[], pirIndex: number): string {
   return configuredLabel.length > 0 ? configuredLabel : `PIR ${pirIndex}`;
 }
 
+function isMaskEnabled(mask: number, pirIndex: number): boolean {
+  return (mask & (1 << pirIndex)) !== 0;
+}
+
 export default function LedConfigEditor({
   config,
   onChange,
@@ -85,10 +89,22 @@ export default function LedConfigEditor({
     });
   };
 
+  const togglePirMask = (maskKey: 'pirMaskOn' | 'pirMaskOff', currentMask: number, pirIndex: number) => {
+    const nextMask = currentMask ^ (1 << pirIndex);
+    if (maskKey === 'pirMaskOn') {
+      onChange({ pirMaskOn: nextMask });
+      return;
+    }
+    onChange({ pirMaskOff: nextMask });
+  };
+
   return (
-    <div className={`space-y-3.5 ${className}`.trim()}>
-      <div>
-        <label className="mb-1 block text-sm font-medium text-slate-700">Brightness: {config.brightness}</label>
+    <div className={`space-y-3 ${className}`.trim()}>
+      <div className="rounded-lg border border-slate-200 bg-slate-50 p-2.5">
+        <div className="mb-1.5 flex items-center justify-between text-xs font-medium text-slate-700">
+          <span>Brightness</span>
+          <span className="font-semibold text-slate-900">{config.brightness}</span>
+        </div>
         <div className="relative h-8 overflow-hidden rounded-md border border-slate-300 bg-slate-100">
           {hasLiveBrightness ? (
             <div
@@ -121,75 +137,63 @@ export default function LedConfigEditor({
         </div>
       </div>
 
-      {TIMING_FIELDS.map(({ label, key }) => (
-        <label key={key} className="block text-sm">
-          <span className="mb-1 block font-medium text-slate-700">{label}</span>
-          <input
-            type="number"
-            value={editingTimingValues[key] ?? config[key]}
-            onChange={(event) => {
-              handleTimingChange(key, event.target.value);
-            }}
-            onBlur={() => {
-              handleTimingBlur(key);
-            }}
-            className="w-full rounded-md border border-slate-300 px-2 py-1 text-slate-900 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
-          />
-        </label>
-      ))}
+      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+        {TIMING_FIELDS.map(({ label, key }) => (
+          <label key={key} className="rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs">
+            <span className="mb-1 block font-medium text-slate-700">{label}</span>
+            <input
+              type="number"
+              value={editingTimingValues[key] ?? config[key]}
+              onChange={(event) => {
+                handleTimingChange(key, event.target.value);
+              }}
+              onBlur={() => {
+                handleTimingBlur(key);
+              }}
+              className="w-full rounded border border-slate-300 px-2 py-1 text-sm text-slate-900 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+            />
+          </label>
+        ))}
+      </div>
 
-      <div className="border-t border-slate-200 pt-3">
+      <div className="rounded-lg border border-slate-200 bg-slate-50 p-2.5">
         <p className="mb-2 text-sm font-semibold text-slate-800">PIR Masks</p>
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <p className="mb-1 text-xs font-medium text-slate-700">Turn On</p>
-            <div className="space-y-1">
-              {Array.from({ length: TOTAL_PIR_COUNT }).map((__, pirIndex) => {
-                const isTriggered = (pirState & (1 << pirIndex)) !== 0;
-                const isChecked = (config.pirMaskOn & (1 << pirIndex)) !== 0;
-                return (
-                  <label
-                    key={`on:${pirIndex}`}
-                    className={`flex items-center gap-2 rounded px-1 py-0.5 text-xs ${isTriggered ? 'bg-rose-100' : ''}`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={isChecked}
-                      onChange={() => {
-                        onChange({ pirMaskOn: config.pirMaskOn ^ (1 << pirIndex) });
+        <div className="grid gap-2 md:grid-cols-2">
+          {[
+            { label: 'Turn On', key: 'pirMaskOn' as const, mask: config.pirMaskOn },
+            { label: 'Turn Off', key: 'pirMaskOff' as const, mask: config.pirMaskOff },
+          ].map((entry) => (
+            <div key={entry.key} className="rounded border border-slate-200 bg-white p-2">
+              <div className="mb-1.5 flex items-center justify-between text-xs font-medium text-slate-700">
+                <span>{entry.label}</span>
+                <span className="font-semibold text-slate-900">{entry.mask}</span>
+              </div>
+              <div className="flex flex-wrap gap-1">
+                {Array.from({ length: TOTAL_PIR_COUNT }).map((__, pirIndex) => {
+                  const enabled = isMaskEnabled(entry.mask, pirIndex);
+                  const triggered = isMaskEnabled(pirState, pirIndex);
+                  return (
+                    <button
+                      key={`${entry.key}:${pirIndex}`}
+                      type="button"
+                      aria-pressed={enabled}
+                      onClick={() => {
+                        togglePirMask(entry.key, entry.mask, pirIndex);
                       }}
-                    />
-                    {getPirLabel(physicalPirLabels, pirIndex)}
-                  </label>
-                );
-              })}
+                      className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-xs transition ${
+                        enabled
+                          ? 'border-emerald-300 bg-emerald-50 text-emerald-900'
+                          : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
+                      } ${triggered ? 'ring-1 ring-rose-300' : ''}`}
+                    >
+                      <span className={`h-1.5 w-1.5 rounded-full ${enabled ? 'bg-emerald-500' : 'bg-slate-300'}`} />
+                      {getPirLabel(physicalPirLabels, pirIndex)}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-          </div>
-
-          <div>
-            <p className="mb-1 text-xs font-medium text-slate-700">Turn Off</p>
-            <div className="space-y-1">
-              {Array.from({ length: TOTAL_PIR_COUNT }).map((__, pirIndex) => {
-                const isTriggered = (pirState & (1 << pirIndex)) !== 0;
-                const isChecked = (config.pirMaskOff & (1 << pirIndex)) !== 0;
-                return (
-                  <label
-                    key={`off:${pirIndex}`}
-                    className={`flex items-center gap-2 rounded px-1 py-0.5 text-xs ${isTriggered ? 'bg-rose-100' : ''}`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={isChecked}
-                      onChange={() => {
-                        onChange({ pirMaskOff: config.pirMaskOff ^ (1 << pirIndex) });
-                      }}
-                    />
-                    {getPirLabel(physicalPirLabels, pirIndex)}
-                  </label>
-                );
-              })}
-            </div>
-          </div>
+          ))}
         </div>
       </div>
     </div>

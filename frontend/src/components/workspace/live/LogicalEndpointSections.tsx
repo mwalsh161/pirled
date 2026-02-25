@@ -64,7 +64,6 @@ function EndpointGrid({
           <LedEndpointControl
             key={endpoint.id}
             endpoint={endpoint}
-            baselineConfig={baselineConfig}
             draftConfig={draftByEndpointId[endpoint.id] ?? baselineConfig}
             liveState={liveState}
             pirState={snapshot.pirState}
