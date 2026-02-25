@@ -3,6 +3,8 @@
   "private": true,
   "version": "0.0.1",
   "type": "module",
+  "volta": { "node": "20.16.0" },
+  "engines": { "node": ">=20 <21" },
   "scripts": {
     "dev": "vite",
     "build": "vite build",
