@@ -14,8 +14,6 @@
 #define WARM_RETRY_COUNT 3
 #define BACKOFF_JITTER_RATIO 0.1  // 10% jitter
 #define AUTO_RESEED_AFTER_COLD_RETRIES 3
-// With current backoff progression, ~20 cold retries is roughly 1 hour disconnected.
-#define MAX_COLD_RETRY_ATTEMPTS_BEFORE_REBOOT 20
 
 class WiFiManager {
    public:
@@ -30,6 +28,7 @@ class WiFiManager {
         snprintf(m_hostname, sizeof(m_hostname), "%s%02X%02X%02X", prefix, mac[3], mac[4], mac[5]);
 
         WiFi.setHostname(m_hostname);
+        WiFi.mode(WIFI_STA);
         WiFi.persistent(false);  // We already read stored config, don't rewrite it.
         WiFi.setAutoConnect(false);
         WiFi.setAutoReconnect(false);  // We will manage to reliably restart services.
@@ -37,6 +36,12 @@ class WiFiManager {
         D_PRINTF("MAC: %02X:%02X:%02X:%02X:%02X:%02X\n", mac[0], mac[1], mac[2], mac[3], mac[4],
                  mac[5]);
         D_PRINTF("WiFi hostname set to: %s\n", m_hostname);
+        m_hasCredentials = hasCredentials();
+        if (!m_hasCredentials) {
+            D_PRINTLN("WiFi: No stored credentials; staying offline until next boot/configuration");
+            m_state = WIFI_IDLE;
+            return;
+        }
         m_state = WIFI_COLD_RETRY;
     }
 
@@ -60,7 +65,12 @@ class WiFiManager {
     }
 
     bool update(unsigned long now) {
-        if (WiFi.status() == WL_CONNECTED) {
+        if (!m_hasCredentials) return false;
+
+        // `linkStatus` is the instantaneous SDK-reported WiFi link status.
+        // `m_state` is this manager's retry/backoff state machine state.
+        wl_status_t linkStatus = WiFi.status();
+        if (linkStatus == WL_CONNECTED) {
             auto ip = WiFi.localIP();
             if (!isLinkLocal(ip)) {
                 if (m_state != WIFI_CONNECTED) {
@@ -73,7 +83,20 @@ class WiFiManager {
                 }
                 return true;
             }
+        } else if (linkStatus == WL_CONNECT_FAILED) {
+            if (m_state == WIFI_CONNECTED) {
+                D_PRINTLN("WiFi: Lost connection, auth failed");
+                notifyDisconnected();
+            }
+            if (!m_retrySuppressed) {
+                D_PRINTLN("WiFi: Unrecoverable credential failure; suppressing retries until reboot");
+            }
+            m_retrySuppressed = true;
+            m_state = WIFI_IDLE;
+            return false;
         }
+
+        if (m_retrySuppressed) return false;
 
         // Disconnected - handle state machine
         if (m_state == WIFI_CONNECTED) {
@@ -108,7 +131,7 @@ class WiFiManager {
 
             case WIFI_COLD_RETRY:
                 D_PRINTLN("WiFi: Attempting cold retry");
-                if (!attemptColdRetryOrReboot()) {
+                if (!attemptColdRetry()) {
                     break;
                 }
                 m_state = WIFI_BACKOFF;
@@ -121,7 +144,7 @@ class WiFiManager {
                         "WiFi: Backoff complete, attempting cold retry (next backoff: %lu "
                         "ms)\n",
                         m_coldRetryBackoff);
-                    if (!attemptColdRetryOrReboot()) {
+                    if (!attemptColdRetry()) {
                         break;
                     }
 
@@ -153,8 +176,10 @@ class WiFiManager {
     unsigned long m_lastRetryTime = 0;
     uint8_t m_coldRetryAttempts = 0;
     bool m_autoReseedAttempted = false;
+    bool m_hasCredentials = false;
+    bool m_retrySuppressed = false;
 
-    bool powerCycleAndConnect() {
+    bool beginWithStoredCredentials() {
         station_config conf;
         if (!wifi_station_get_config(&conf)) return false;
         const char* ssid = reinterpret_cast<const char*>(conf.ssid);
@@ -166,9 +191,6 @@ class WiFiManager {
             password_len == sizeof(conf.password))
             return false;
 
-        WiFi.mode(WIFI_OFF);
-        delay(100);
-        WiFi.mode(WIFI_STA);
         D_PRINTF("Calling WiFi.begin(\"%s\", \"%c**%c\")\n", ssid, password[0],
                  password[password_len - 1]);
         WiFi.begin(ssid, password);
@@ -176,10 +198,9 @@ class WiFiManager {
         return true;
     }
 
-    bool attemptColdRetryOrReboot() {
+    bool attemptColdRetry() {
         m_coldRetryAttempts++;
-        D_PRINTF("WiFi: Cold retry attempt %u/%u\n", m_coldRetryAttempts,
-                 MAX_COLD_RETRY_ATTEMPTS_BEFORE_REBOOT);
+        D_PRINTF("WiFi: Cold retry attempt %u\n", m_coldRetryAttempts);
 
         if (!m_autoReseedAttempted && m_coldRetryAttempts >= AUTO_RESEED_AFTER_COLD_RETRIES) {
             m_autoReseedAttempted = true;
@@ -188,13 +209,7 @@ class WiFiManager {
             attemptAutoReseed();
         }
 
-        if (m_coldRetryAttempts >= MAX_COLD_RETRY_ATTEMPTS_BEFORE_REBOOT) {
-            D_PRINTF("WiFi: Cold retries exceeded (%u), rebooting\n", m_coldRetryAttempts);
-            ESP.restart();
-            return false;
-        }
-
-        return powerCycleAndConnect();
+        return beginWithStoredCredentials();
     }
 
     bool attemptAutoReseed() {
