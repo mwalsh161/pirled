@@ -21,7 +21,7 @@ import {
   isLedConfig,
 } from './types';
 
-const API_BASE = '/api';
+const API_BASE = 'api';  // Note, reverse-proxy issue so make relative to SPA.
 const fieldMapCache = new Map<string, ReturnType<typeof buildFieldMap>>();
 const fieldMapInFlight = new Map<string, Promise<ReturnType<typeof buildFieldMap>>>();
 
