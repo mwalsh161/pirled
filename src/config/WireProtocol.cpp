@@ -3,7 +3,7 @@
 #include <array>
 
 #include "board/RuntimeState.h"
-#include "config/Config.h"
+#include "config/ConfigStore.h"
 
 namespace {
 template <typename T>

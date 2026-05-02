@@ -2,7 +2,7 @@
 
 #include <ESP8266WiFi.h>
 
-#include "config/Config.h"
+#include "config/ConfigStore.h"
 
 #define DNS_PORT 53
 

@@ -1,16 +1,15 @@
 #include <Arduino.h>
 #include <BearSSLHelpers.h>
-#include "config/Config.h"
-#include <EEPROM.h>
 #include <ESP8266mDNS.h>
-#include <ErriezCRC32.h>
 #include <errno.h>
 #include <limits.h>
 
+#include "config/ConfigServer.h"
+#include "config/ConfigStore.h"
 #include "config/WireProtocol.h"
-#include "system/Logger.h"
 #include "debug.h"
 #include "ota_public_key.h"
+#include "system/Logger.h"
 
 #ifndef FIRMWARE_VERSION
 #error "FIRMWARE_VERSION not set. Define via PlatformIO build (see scripts/set_firmware_version.py)"
@@ -20,108 +19,13 @@
 #define STRINGIFY(x) #x
 #define STRINGIFY_EXPANSION(x) STRINGIFY(x)
 
-#define VIRTUAL_PIR 4
-
 namespace {
-constexpr uint32_t CONFIG_MAGIC = 0x5049524C;  // "PIRL"
-constexpr uint16_t CONFIG_VERSION = 4;
 const char FIRMWARE_VERSION_STR[] PROGMEM = STRINGIFY_EXPANSION(FIRMWARE_VERSION);
-Config s_config;
-
-constexpr uint8_t CFG_BOOT_SOURCE_STORED = 0;
-constexpr uint8_t CFG_BOOT_SOURCE_DEFAULTS = 1;
-constexpr uint8_t CFG_SAVE_NO_CHANGE = 0;
-constexpr uint8_t CFG_SAVE_COMMITTED = 1;
-constexpr uint8_t CFG_SAVE_COMMIT_FAILED = 2;
 }  // namespace
-
-const Config& getConfig() { return s_config; }
-LedConfig& getLedConfig(size_t index) { return s_config.ledConfig[index]; }
 
 BearSSL::PublicKey signPubKey(publicKey);
 BearSSL::HashSHA256 hash;
 BearSSL::SigningVerifier sign(&signPubKey);
-
-uint32_t computeCrc(const Config& cfg) {
-    return crc32Buffer(reinterpret_cast<const uint8_t*>(&cfg), offsetof(Config, crc));
-}
-
-void setConfigDefaults() {
-    memset(&s_config, 0, sizeof(s_config));
-
-    s_config.magic = CONFIG_MAGIC;
-    s_config.version = CONFIG_VERSION;
-
-    for (size_t i = 0; i < s_config.ledConfig.size(); i++) {
-        uint8_t pirMask = (1 << i) | (1 << (i + VIRTUAL_PIR));
-        s_config.ledConfig[i] = {.brightness = 1023,
-                               .rampOnMs = 1000,
-                               .holdOnMs = 10000,
-                               .rampOffMs = 1000,
-                               .waitOnMs = 0,
-                               .pirMaskOn = pirMask,
-                               .pirMaskOff = pirMask};
-    }
-
-    s_config.crc = computeCrc(s_config);
-}
-
-bool initConfig() {
-    EEPROM.begin(sizeof(Config));
-    EEPROM.get(0, s_config);
-
-    uint32_t storedMagic = s_config.magic;
-    uint16_t storedVersion = s_config.version;
-    uint32_t storedCrc = s_config.crc;
-    uint32_t computedCrc = computeCrc(s_config);
-    bool magicValid = s_config.magic == CONFIG_MAGIC;
-    bool versionValid = s_config.version == CONFIG_VERSION;
-    bool crcValid = s_config.crc == computedCrc;
-    bool valid = magicValid && versionValid && crcValid;
-    uint8_t bootSource = CFG_BOOT_SOURCE_STORED;
-
-    if (!valid) {
-        D_PRINTLN("Stored config invalid, loading defaults");
-        setConfigDefaults();
-        bootSource = CFG_BOOT_SOURCE_DEFAULTS;
-    }
-
-    // cb,<boot_source>,<valid>,<magic_ok>,<version_ok>,<crc_ok>,<stored_magic>,<stored_version>,<stored_crc>,<computed_crc>
-    char status[128] = "";
-    snprintf(status, sizeof(status), "cb,%u,%u,%u,%u,%u,%lu,%u,%lu,%lu", bootSource, valid, magicValid,
-             versionValid, crcValid, static_cast<unsigned long>(storedMagic), storedVersion,
-             static_cast<unsigned long>(storedCrc), static_cast<unsigned long>(computedCrc));
-    log(status);
-    D_PRINTLN(status);
-
-    return valid;
-}
-
-bool saveConfig() {
-    s_config.crc = computeCrc(s_config);
-
-    Config stored;
-    EEPROM.get(0, stored);
-    char saveStatus[8] = "";
-    if (memcmp(&stored, &s_config, sizeof(Config)) == 0) {
-        snprintf(saveStatus, sizeof(saveStatus), "cs,%u", CFG_SAVE_NO_CHANGE);
-        log(saveStatus);
-        D_PRINTLN(saveStatus);
-        return true;
-    }
-
-    EEPROM.put(0, s_config);
-    if (!EEPROM.commit()) {
-        snprintf(saveStatus, sizeof(saveStatus), "cs,%u", CFG_SAVE_COMMIT_FAILED);
-        log(saveStatus);
-        D_PRINTLN(saveStatus);
-        return false;
-    }
-    snprintf(saveStatus, sizeof(saveStatus), "cs,%u", CFG_SAVE_COMMITTED);
-    log(saveStatus);
-    D_PRINTLN(saveStatus);
-    return true;
-}
 
 void addCors(ESP8266WebServer& server) {
     server.sendHeader("Access-Control-Allow-Origin", "*");
@@ -171,11 +75,12 @@ ConfigServer::ConfigServer() : m_server(80) {
             sendInvalidArg(m_server, "index");
             return;
         }
-        if (index < 0 || static_cast<size_t>(index) >= s_config.ledConfig.size()) {
+        if (index < 0 || static_cast<size_t>(index) >= getConfig().ledConfig.size()) {
             m_server.send(400, "text/html", "Invalid LED index");
             return;
         }
         size_t i = static_cast<size_t>(index);
+        LedConfig& ledCfg = getLedConfig(i);
 
         if (m_server.hasArg("brightness")) {
             int32_t value = 0;
@@ -183,7 +88,7 @@ ConfigServer::ConfigServer() : m_server(80) {
                 sendInvalidArg(m_server, "brightness");
                 return;
             }
-            s_config.ledConfig[i].brightness = static_cast<int16_t>(constrain(value, 0, 1023));
+            ledCfg.brightness = static_cast<int16_t>(constrain(value, 0, 1023));
         }
         if (m_server.hasArg("rampOnMs")) {
             int32_t value = 0;
@@ -191,7 +96,7 @@ ConfigServer::ConfigServer() : m_server(80) {
                 sendInvalidArg(m_server, "rampOnMs");
                 return;
             }
-            s_config.ledConfig[i].rampOnMs = static_cast<int16_t>(constrain(value, 0, INT16_MAX));
+            ledCfg.rampOnMs = static_cast<int16_t>(constrain(value, 0, INT16_MAX));
         }
         if (m_server.hasArg("holdOnMs")) {
             int64_t value = 0;
@@ -199,7 +104,7 @@ ConfigServer::ConfigServer() : m_server(80) {
                 sendInvalidArg(m_server, "holdOnMs");
                 return;
             }
-            s_config.ledConfig[i].holdOnMs =
+            ledCfg.holdOnMs =
                 static_cast<uint32_t>(constrain(value, int64_t(0), int64_t(UINT32_MAX)));
         }
         if (m_server.hasArg("rampOffMs")) {
@@ -208,7 +113,7 @@ ConfigServer::ConfigServer() : m_server(80) {
                 sendInvalidArg(m_server, "rampOffMs");
                 return;
             }
-            s_config.ledConfig[i].rampOffMs = static_cast<int16_t>(constrain(value, 0, INT16_MAX));
+            ledCfg.rampOffMs = static_cast<int16_t>(constrain(value, 0, INT16_MAX));
         }
         if (m_server.hasArg("waitOnMs")) {
             int64_t value = 0;
@@ -216,7 +121,7 @@ ConfigServer::ConfigServer() : m_server(80) {
                 sendInvalidArg(m_server, "waitOnMs");
                 return;
             }
-            s_config.ledConfig[i].waitOnMs =
+            ledCfg.waitOnMs =
                 static_cast<uint32_t>(constrain(value, int64_t(0), int64_t(UINT32_MAX)));
         }
         if (m_server.hasArg("pirMaskOn")) {
@@ -225,7 +130,7 @@ ConfigServer::ConfigServer() : m_server(80) {
                 sendInvalidArg(m_server, "pirMaskOn");
                 return;
             }
-            s_config.ledConfig[i].pirMaskOn = static_cast<uint8_t>(constrain(value, 0, int(UINT8_MAX)));
+            ledCfg.pirMaskOn = static_cast<uint8_t>(constrain(value, 0, int(UINT8_MAX)));
         }
         if (m_server.hasArg("pirMaskOff")) {
             int32_t value = 0;
@@ -233,7 +138,7 @@ ConfigServer::ConfigServer() : m_server(80) {
                 sendInvalidArg(m_server, "pirMaskOff");
                 return;
             }
-            s_config.ledConfig[i].pirMaskOff = static_cast<uint8_t>(constrain(value, 0, int(UINT8_MAX)));
+            ledCfg.pirMaskOff = static_cast<uint8_t>(constrain(value, 0, int(UINT8_MAX)));
         }
         sendWireData(m_server);
     });
@@ -245,7 +150,7 @@ ConfigServer::ConfigServer() : m_server(80) {
             sendInvalidArg(m_server, "timestamp");
             return;
         }
-        s_config.timestamp = timestamp;
+        setConfigTimestamp(timestamp);
         addCors(m_server);
         if (!saveConfig()) {
             m_server.send(500, "text/plain", "Save failed");
