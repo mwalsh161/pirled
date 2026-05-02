@@ -7,8 +7,6 @@
 class Controller {
    public:
     enum class State : uint8_t { OFF, WAITING_ON, ON, WAITING_OFF };
-    Led m_led;
-    State m_state = State::OFF;
 
     Controller(uint8_t pin, int16_t& brightness, int16_t& rampOn_ms, uint32_t& holdOn_ms,
                int16_t& rampOff_ms, uint32_t& waitOn_ms, uint8_t& pirMaskOn, uint8_t& pirMaskOff)
@@ -25,7 +23,13 @@ class Controller {
 
     void update(unsigned long now, uint8_t pirStates);
 
+    const Led& led() const { return m_led; }
+    State state() const { return m_state; }
+
    private:
+    Led m_led;
+    State m_state = State::OFF;
+
     int16_t& m_brightness;
     int16_t& m_rampOn_ms;
     uint32_t& m_holdOn_ms;

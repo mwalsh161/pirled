@@ -62,8 +62,8 @@ void sendWireData(ESP8266WebServer& server) {
         static_assert(sizeof(ledConf.pirMaskOff) == 1);
     }
     for (const auto& ledState : LEDS) {
-        const auto& brightness = ledState.m_led.m_brightness;
-        const auto& state = ledState.m_state;
+        const auto& brightness = ledState.led().brightness();
+        const auto state = ledState.state();
         server.sendContent(charPtr(brightness), sizeof(brightness));
         static_assert(sizeof(brightness) == 2);
         server.sendContent(charPtr(state), sizeof(state));

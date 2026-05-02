@@ -4,7 +4,6 @@
 
 class Led {
    public:
-    int16_t m_brightness = 0;
     Led(uint8_t pin, bool inv = false) : m_ledPin(pin), m_inv(inv) {}
 
     void setup() {
@@ -16,7 +15,10 @@ class Led {
 
     void setTarget(int16_t* brightness, int16_t* slew_ms, unsigned long now);
 
+    const int16_t& brightness() const { return m_brightness; }
+
    private:
+    int16_t m_brightness = 0;
     const uint8_t m_ledPin;
     bool m_inv;
     int16_t* m_slew_msPtr = nullptr;
