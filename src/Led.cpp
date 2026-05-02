@@ -1,9 +1,6 @@
 #include <Arduino.h>
 #include <Led.h>
 
-#include "Logger.h"
-#include "debug.h"
-
 static constexpr int32_t LED_MAX = 1023;  // analogWriteResolution (2^10)
 
 void Led::setTarget(int16_t* brightnessPtr, int16_t* slew_msPtr, unsigned long now) {
@@ -29,9 +26,6 @@ void Led::update(unsigned long now) {
         return;
     }
 
-    D_PRINT("LED pin" + String(m_ledPin) + ": ");
-    logPartial(m_ledPin);
-
     if (slew == 0) {
         m_brightness = target;
     } else {
@@ -42,12 +36,7 @@ void Led::update(unsigned long now) {
 
         int32_t delta = LED_MAX * elapsed_ms / slew;
 
-        logPartial(elapsed_ms);
-        logPartial(delta);
-        D_PRINT("Elapsed: " + String(elapsed_ms) + ", ");
-        D_PRINT("Delta: " + String(delta) + ", ");
         if (delta == 0) {  // elapsed too small to matter
-            log("");
             return;
         }
 
@@ -55,10 +44,6 @@ void Led::update(unsigned long now) {
         delta = min(delta, abs(diff));  // prevent overshoot
         m_brightness += (diff > 0) ? delta : -delta;
     }
-
-    D_PRINTLN("Brightness: " + String(m_brightness));
-    logPartial(m_brightness);
-    log("");
 
     m_brightness = constrain(m_brightness, 0, LED_MAX);  // Just in case
     m_lastUpdate = now;
