@@ -5,6 +5,7 @@
 #include <ErriezCRC32.h>
 #include <stddef.h>
 
+#include "config/ConfigMigration.h"
 #include "debug.h"
 #include "system/Logger.h"
 
@@ -17,6 +18,7 @@ Config s_config;
 
 constexpr uint8_t CFG_BOOT_SOURCE_STORED = 0;
 constexpr uint8_t CFG_BOOT_SOURCE_DEFAULTS = 1;
+constexpr uint8_t CFG_BOOT_SOURCE_MIGRATED = 2;
 constexpr uint8_t CFG_SAVE_NO_CHANGE = 0;
 constexpr uint8_t CFG_SAVE_COMMITTED = 1;
 constexpr uint8_t CFG_SAVE_COMMIT_FAILED = 2;
@@ -79,12 +81,29 @@ bool initConfig() {
     bool versionValid = s_config.version == CONFIG_VERSION;
     bool crcValid = s_config.crc == computedCrc;
     bool valid = magicValid && versionValid && crcValid;
+    bool recoveredStoredConfig = valid;
     uint8_t bootSource = CFG_BOOT_SOURCE_STORED;
 
     if (!valid) {
-        D_PRINTLN("Stored config invalid, loading defaults");
-        setConfigDefaults();
-        bootSource = CFG_BOOT_SOURCE_DEFAULTS;
+        if (magicValid) {
+            setConfigDefaults();
+        }
+        if (magicValid && migrateStoredConfig(storedVersion, s_config)) {
+            char migrationStatus[16] = "";
+            snprintf(migrationStatus, sizeof(migrationStatus), "cm,%u,%u", storedVersion, CONFIG_VERSION);
+            log(migrationStatus);
+            D_PRINTLN(migrationStatus);
+            D_PRINTLN("Stored config migrated");
+            bootSource = CFG_BOOT_SOURCE_MIGRATED;
+            recoveredStoredConfig = true;
+            saveConfig();
+        } else {
+            D_PRINTLN("Stored config invalid, loading defaults");
+            if (!magicValid) {
+                setConfigDefaults();
+            }
+            bootSource = CFG_BOOT_SOURCE_DEFAULTS;
+        }
     }
 
     // cb,<boot_source>,<valid>,<magic_ok>,<version_ok>,<crc_ok>,<stored_magic>,<stored_version>,<stored_crc>,<computed_crc>
@@ -95,7 +114,7 @@ bool initConfig() {
     log(status);
     D_PRINTLN(status);
 
-    return valid;
+    return recoveredStoredConfig;
 }
 
 bool saveConfig() {
