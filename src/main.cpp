@@ -1,8 +1,8 @@
-#include "board/pins.h"
+#include "board/BoardPins.h"
 
 #include <cstring>
 
-#include "board/AppState.h"
+#include "board/RuntimeState.h"
 #include "led/Led.h"
 #include "net/PortalServer.h"
 #include "system/Logger.h"

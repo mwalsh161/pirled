@@ -2,7 +2,7 @@
 
 #include <array>
 
-#include "board/AppState.h"
+#include "board/RuntimeState.h"
 #include "config/Config.h"
 
 namespace {
