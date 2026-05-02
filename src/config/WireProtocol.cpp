@@ -1,4 +1,4 @@
-#include "WireProtocol.h"
+#include "config/WireProtocol.h"
 
 #include <array>
 

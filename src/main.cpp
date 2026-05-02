@@ -3,7 +3,6 @@
 #include <cstring>
 
 #include "board/RuntimeState.h"
-#include "led/Led.h"
 #include "net/PortalServer.h"
 #include "system/Logger.h"
 #include "system/ResetTap.h"

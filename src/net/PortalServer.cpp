@@ -1,8 +1,6 @@
-#include "PortalServer.h"
+#include "net/PortalServer.h"
 
 #include <ESP8266WiFi.h>
-
-#include "config/ConfigStore.h"
 
 #define DNS_PORT 53
 
