@@ -1,8 +1,10 @@
 #include <Arduino.h>
 #include <BearSSLHelpers.h>
+#include <ctype.h>
 #include <ESP8266mDNS.h>
 #include <errno.h>
 #include <limits.h>
+#include <string.h>
 
 #include "config/ConfigServer.h"
 #include "config/ConfigStore.h"
@@ -54,6 +56,80 @@ bool parseInt64Strict(const String& value, int64_t& out) {
     if (errno == ERANGE || end == value.c_str() || *end != '\0') return false;
     out = static_cast<int64_t>(parsed);
     return true;
+}
+
+bool parseBoolStrict(const String& value, bool& out) {
+    if (value == "1" || value.equalsIgnoreCase("true")) {
+        out = true;
+        return true;
+    }
+    if (value == "0" || value.equalsIgnoreCase("false")) {
+        out = false;
+        return true;
+    }
+    return false;
+}
+
+bool parseIndexArg(ESP8266WebServer& server, size_t maxSize, size_t& out) {
+    int32_t index = 0;
+    if (!server.hasArg("index") || !parseInt32Strict(server.arg("index"), index)) return false;
+    if (index < 0 || static_cast<size_t>(index) >= maxSize) return false;
+    out = static_cast<size_t>(index);
+    return true;
+}
+
+bool isRemoteHostChar(char c) {
+    return isalnum(static_cast<unsigned char>(c)) || c == '-' || c == '.' || c == '_';
+}
+
+bool copyRemoteHost(const String& value, char* out, size_t outSize) {
+    if (value.length() >= outSize) return false;
+    for (size_t i = 0; i < value.length(); i++) {
+        if (!isRemoteHostChar(value.charAt(i))) return false;
+    }
+    value.toCharArray(out, outSize);
+    return true;
+}
+
+void appendRemoteHost(String& json, const char* host) {
+    json += "\"";
+    json += host;
+    json += "\"";
+}
+
+void sendRemoteSharingJson(ESP8266WebServer& server) {
+    const Config& config = getConfig();
+    String json;
+    json.reserve(1024);
+    json += "{\"eventDestinations\":[";
+    for (size_t i = 0; i < config.eventDestinations.size(); i++) {
+        if (i > 0) json += ",";
+        const auto& destination = config.eventDestinations[i];
+        json += "{\"host\":";
+        appendRemoteHost(json, destination.host);
+        json += ",\"port\":";
+        json += static_cast<unsigned int>(destination.port);
+        json += ",\"enabled\":";
+        json += destination.enabled ? "true" : "false";
+        json += "}";
+    }
+    json += "],\"remotePirs\":[";
+    for (size_t i = 0; i < config.remotePirs.size(); i++) {
+        if (i > 0) json += ",";
+        const auto& remotePir = config.remotePirs[i];
+        json += "{\"sourceHost\":";
+        appendRemoteHost(json, remotePir.sourceHost);
+        json += ",\"sourcePirIndex\":";
+        json += static_cast<unsigned int>(remotePir.sourcePirIndex);
+        json += ",\"leaseMs\":";
+        json += static_cast<unsigned long>(remotePir.leaseMs);
+        json += ",\"enabled\":";
+        json += remotePir.enabled ? "true" : "false";
+        json += "}";
+    }
+    json += "]}";
+    addCors(server);
+    server.send(200, "application/json", json);
 }
 
 void sendInvalidArg(ESP8266WebServer& server, const char* name) {
@@ -145,6 +221,94 @@ ConfigServer::ConfigServer() : m_server(80) {
         sendWireData(m_server);
     });
     m_server.on("/config/led", HTTP_OPTIONS, handleOptions);
+
+    m_server.on("/config/remote_sharing", HTTP_GET, [&]() { sendRemoteSharingJson(m_server); });
+    m_server.on("/config/remote_sharing", HTTP_OPTIONS, handleOptions);
+
+    m_server.on("/config/pir_destination", HTTP_POST, [&]() {
+        addCors(m_server);
+
+        size_t i = 0;
+        if (!parseIndexArg(m_server, getConfig().eventDestinations.size(), i)) {
+            sendInvalidArg(m_server, "index");
+            return;
+        }
+
+        PirEventDestinationConfig next = getPirEventDestinationConfig(i);
+        if (m_server.hasArg("host") &&
+            !copyRemoteHost(m_server.arg("host"), next.host, sizeof(next.host))) {
+            sendInvalidArg(m_server, "host");
+            return;
+        }
+        if (m_server.hasArg("port")) {
+            int32_t value = 0;
+            if (!parseInt32Strict(m_server.arg("port"), value) || value <= 0 ||
+                value > UINT16_MAX) {
+                sendInvalidArg(m_server, "port");
+                return;
+            }
+            next.port = static_cast<uint16_t>(value);
+        }
+        if (m_server.hasArg("enabled") && !parseBoolStrict(m_server.arg("enabled"), next.enabled)) {
+            sendInvalidArg(m_server, "enabled");
+            return;
+        }
+        if (next.enabled && next.host[0] == '\0') {
+            sendInvalidArg(m_server, "host");
+            return;
+        }
+
+        getPirEventDestinationConfig(i) = next;
+        sendRemoteSharingJson(m_server);
+    });
+    m_server.on("/config/pir_destination", HTTP_OPTIONS, handleOptions);
+
+    m_server.on("/config/remote_pir", HTTP_POST, [&]() {
+        addCors(m_server);
+
+        size_t i = 0;
+        if (!parseIndexArg(m_server, getConfig().remotePirs.size(), i)) {
+            sendInvalidArg(m_server, "index");
+            return;
+        }
+
+        RemotePirConfig next = getRemotePirConfig(i);
+        if (m_server.hasArg("sourceHost") &&
+            !copyRemoteHost(m_server.arg("sourceHost"), next.sourceHost, sizeof(next.sourceHost))) {
+            sendInvalidArg(m_server, "sourceHost");
+            return;
+        }
+        if (m_server.hasArg("sourcePirIndex")) {
+            int32_t value = 0;
+            if (!parseInt32Strict(m_server.arg("sourcePirIndex"), value) || value < 0 ||
+                value >= 4) {
+                sendInvalidArg(m_server, "sourcePirIndex");
+                return;
+            }
+            next.sourcePirIndex = static_cast<uint8_t>(value);
+        }
+        if (m_server.hasArg("leaseMs")) {
+            int64_t value = 0;
+            if (!parseInt64Strict(m_server.arg("leaseMs"), value) || value <= 0 ||
+                value > int64_t(UINT32_MAX)) {
+                sendInvalidArg(m_server, "leaseMs");
+                return;
+            }
+            next.leaseMs = static_cast<uint32_t>(value);
+        }
+        if (m_server.hasArg("enabled") && !parseBoolStrict(m_server.arg("enabled"), next.enabled)) {
+            sendInvalidArg(m_server, "enabled");
+            return;
+        }
+        if (next.enabled && next.sourceHost[0] == '\0') {
+            sendInvalidArg(m_server, "sourceHost");
+            return;
+        }
+
+        getRemotePirConfig(i) = next;
+        sendRemoteSharingJson(m_server);
+    });
+    m_server.on("/config/remote_pir", HTTP_OPTIONS, handleOptions);
 
     m_server.on("/config/save", HTTP_POST, [&]() {
         int64_t timestamp = 0;

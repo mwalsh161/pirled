@@ -12,7 +12,7 @@
 
 namespace {
 constexpr uint32_t CONFIG_MAGIC = 0x5049524C;  // "PIRL"
-constexpr uint16_t CONFIG_VERSION = 5;
+constexpr uint16_t CONFIG_VERSION = 6;
 Config s_config;
 
 constexpr uint8_t CFG_BOOT_SOURCE_STORED = 0;
@@ -42,12 +42,29 @@ void setConfigDefaults() {
                                  .pirMaskOff = pirMask};
     }
 
+    for (auto& destination : s_config.eventDestinations) {
+        destination.host[0] = '\0';
+        destination.port = REMOTE_PIR_DEFAULT_PORT;
+        destination.enabled = false;
+    }
+
+    for (auto& remotePir : s_config.remotePirs) {
+        remotePir.sourceHost[0] = '\0';
+        remotePir.sourcePirIndex = 0;
+        remotePir.leaseMs = REMOTE_PIR_DEFAULT_LEASE_MS;
+        remotePir.enabled = false;
+    }
+
     s_config.crc = computeCrc(s_config);
 }
 }  // namespace
 
 const Config& getConfig() { return s_config; }
 LedConfig& getLedConfig(size_t index) { return s_config.ledConfig[index]; }
+PirEventDestinationConfig& getPirEventDestinationConfig(size_t index) {
+    return s_config.eventDestinations[index];
+}
+RemotePirConfig& getRemotePirConfig(size_t index) { return s_config.remotePirs[index]; }
 void setConfigTimestamp(int64_t timestamp) { s_config.timestamp = timestamp; }
 
 bool initConfig() {

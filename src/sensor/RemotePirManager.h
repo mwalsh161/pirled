@@ -7,9 +7,7 @@
 
 #include "config/ConfigStore.h"
 
-constexpr size_t REMOTE_PIR_SLOT_COUNT = 8;
 constexpr uint8_t REMOTE_PIR_FIRST_BIT = 8;
-constexpr uint32_t REMOTE_PIR_LEASE_MS = 9000;
 
 class RemotePirManager {
    public:
@@ -18,7 +16,7 @@ class RemotePirManager {
     PirStates remotePirStates() const { return m_remotePirStates; }
 
     void setRemotePirSlot(size_t slot, bool active, uint32_t now,
-                          uint32_t leaseMs = REMOTE_PIR_LEASE_MS);
+                          uint32_t leaseMs = REMOTE_PIR_DEFAULT_LEASE_MS);
     void clearRemotePirSlot(size_t slot);
     void clearAllRemotePirSlots();
 
