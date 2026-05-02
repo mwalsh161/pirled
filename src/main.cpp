@@ -70,7 +70,7 @@ void setup() {
     D_PRINTLN("");
 
     uint32_t resetTapCount = readResetTapCountForBoot();
-    D_PRINTF("Reset reason: %lu\n", getResetReasonCode());
+    D_PRINTF("Reset reason: %lu\n", static_cast<unsigned long>(getResetReasonCode()));
     D_PRINTF("Tap candidate: %lu\n", static_cast<unsigned long>(resetTapCount));
     resetTapCount = finalizeResetTapCountAfterWindow();
     D_PRINTF("Tap final: %lu\n", static_cast<unsigned long>(resetTapCount));
