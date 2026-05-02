@@ -2,8 +2,8 @@
 
 #include <array>
 
-#include "AppState.h"
-#include "Config.h"
+#include "board/AppState.h"
+#include "config/Config.h"
 
 namespace {
 template <typename T>

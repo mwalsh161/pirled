@@ -1,6 +1,6 @@
-#include <Config.h>
-#include <Controller.h>
-#include <WiFiManager.h>
+#include "config/Config.h"
+#include "led/Controller.h"
+#include "net/WiFiManager.h"
 
 extern std::array<Controller, 4> LEDS;
 extern std::array<uint8_t, 4> PIR_PINS;

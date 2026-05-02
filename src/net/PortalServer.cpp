@@ -1,7 +1,8 @@
 #include "PortalServer.h"
 
-#include <Config.h>
 #include <ESP8266WiFi.h>
+
+#include "config/Config.h"
 
 #define DNS_PORT 53
 
@@ -9,7 +10,7 @@ namespace {
 #ifndef __INTELLISENSE__
 // clang-format off
 const char SPLASH_HTML[] PROGMEM =
-#include "static/splash.html"
+#include "../static/splash.html"
 ;
 // clang-format on
 #else

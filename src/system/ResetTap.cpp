@@ -7,7 +7,7 @@ extern "C" {
 #include <user_interface.h>
 }
 
-#include "Logger.h"
+#include "system/Logger.h"
 
 namespace {
 constexpr uint32_t RESET_TAP_RTC_SLOT =

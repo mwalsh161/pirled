@@ -1,14 +1,14 @@
 #include <Arduino.h>
 #include <BearSSLHelpers.h>
-#include <Config.h>
+#include "config/Config.h"
 #include <EEPROM.h>
 #include <ESP8266mDNS.h>
 #include <ErriezCRC32.h>
 #include <errno.h>
 #include <limits.h>
 
-#include "Logger.h"
-#include "WireProtocol.h"
+#include "config/WireProtocol.h"
+#include "system/Logger.h"
 #include "debug.h"
 #include "ota_public_key.h"
 

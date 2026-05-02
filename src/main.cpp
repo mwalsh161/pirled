@@ -1,12 +1,12 @@
-#include <pins.h>
+#include "board/pins.h"
 
 #include <cstring>
 
-#include "AppState.h"
-#include "Led.h"
-#include "Logger.h"
-#include "PortalServer.h"
-#include "ResetTap.h"
+#include "board/AppState.h"
+#include "led/Led.h"
+#include "net/PortalServer.h"
+#include "system/Logger.h"
+#include "system/ResetTap.h"
 #include "debug.h"
 
 namespace {

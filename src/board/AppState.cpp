@@ -1,5 +1,5 @@
-#include <AppState.h>
-#include <pins.h>
+#include "board/AppState.h"
+#include "board/pins.h"
 
 namespace {
 Controller makeController(uint8_t pin, LedConfig& ledCfg) {
