@@ -11,20 +11,20 @@ const char* charPtr(const T& value) {
     return reinterpret_cast<const char*>(&value);
 }
 
-constexpr size_t PAYLOAD_SIZE = 86;
+constexpr size_t PAYLOAD_SIZE = 96;
 constexpr char WIRE_SCHEMA_JSON[] PROGMEM = R"json(
 [
 {"name": "timestamp", "size": 8, "type": "int"},
-{"name": "pirState", "size": 1, "type": "uint"},
-{"name": "pirOverride", "size": 1, "type": "uint"},
+{"name": "pirState", "size": 2, "type": "uint"},
+{"name": "pirOverride", "size": 2, "type": "uint"},
 {"name": "ledConfigs","arrayLen": 4,"sub": [
  {"name": "brightness", "size": 2, "type": "int"},
  {"name": "rampOnMs", "size": 2, "type": "int"},
  {"name": "holdOnMs", "size": 4, "type": "uint"},
  {"name": "rampOffMs", "size": 2, "type": "int"},
  {"name": "waitOnMs", "size": 4, "type": "uint"},
- {"name": "pirMaskOn", "size": 1, "type": "uint"},
- {"name": "pirMaskOff", "size": 1, "type": "uint"}
+ {"name": "pirMaskOn", "size": 2, "type": "uint"},
+ {"name": "pirMaskOff", "size": 2, "type": "uint"}
 ]},
 {"name": "ledStates","arrayLen": 4,"sub": [
  {"name": "brightness", "size": 2, "type": "int"},
@@ -41,10 +41,10 @@ void sendWireData(ESP8266WebServer& server) {
     server.sendContent(charPtr(config.timestamp), sizeof(config.timestamp));
     static_assert(sizeof(config.timestamp) == 8);
     server.sendContent(charPtr(PIR_STATES), sizeof(PIR_STATES));
-    static_assert(sizeof(PIR_STATES) == 1);
+    static_assert(sizeof(PIR_STATES) == 2);
     const auto pirOverrides = CONFIG_SERVER.pirOverrides();
     server.sendContent(charPtr(pirOverrides), sizeof(pirOverrides));
-    static_assert(sizeof(pirOverrides) == 1);
+    static_assert(sizeof(pirOverrides) == 2);
     for (const auto& ledConf : config.ledConfig) {
         server.sendContent(charPtr(ledConf.brightness), sizeof(ledConf.brightness));
         static_assert(sizeof(ledConf.brightness) == 2);
@@ -57,9 +57,9 @@ void sendWireData(ESP8266WebServer& server) {
         server.sendContent(charPtr(ledConf.waitOnMs), sizeof(ledConf.waitOnMs));
         static_assert(sizeof(ledConf.waitOnMs) == 4);
         server.sendContent(charPtr(ledConf.pirMaskOn), sizeof(ledConf.pirMaskOn));
-        static_assert(sizeof(ledConf.pirMaskOn) == 1);
+        static_assert(sizeof(ledConf.pirMaskOn) == 2);
         server.sendContent(charPtr(ledConf.pirMaskOff), sizeof(ledConf.pirMaskOff));
-        static_assert(sizeof(ledConf.pirMaskOff) == 1);
+        static_assert(sizeof(ledConf.pirMaskOff) == 2);
     }
     for (const auto& ledState : LEDS) {
         const auto& brightness = ledState.led().brightness();

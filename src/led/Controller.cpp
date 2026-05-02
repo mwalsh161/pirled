@@ -6,7 +6,7 @@ namespace {
 int16_t ZERO = 0;
 }  // namespace
 
-void Controller::update(unsigned long now, uint8_t pirStates) {
+void Controller::update(unsigned long now, PirStates pirStates) {
     switch (m_state) {
         case Controller::State::OFF:
             if (isPirActiveForOn(pirStates)) {

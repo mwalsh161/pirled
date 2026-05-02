@@ -1,4 +1,7 @@
 export function getPirLabel(labels: string[], pirIndex: number): string {
+  if (pirIndex >= 8) {
+    return `PIR R${pirIndex - 8}`;
+  }
   if (pirIndex >= 4) {
     return `PIR V${pirIndex - 4}`;
   }

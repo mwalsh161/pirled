@@ -1,19 +1,62 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'fs';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
 import { BufferDeviceState, buildFieldMap } from './BufferDeviceState';
 import SCHEMA from './__fixtures__/wire-schema.json';
 
-/**
- * Load binary fixture file for realistic device state testing
- */
-function loadFixture(filename: string): ArrayBuffer {
-  const __filename = fileURLToPath(import.meta.url);
-  const __dirname = dirname(__filename);
-  const fixturePath = join(__dirname, '__fixtures__', filename);
-  const buffer = readFileSync(fixturePath);
-  return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
+const PAYLOAD_SIZE = 96;
+const PIR_STATE_OFFSET = 8;
+const PIR_OVERRIDE_OFFSET = 10;
+const LED_CONFIGS_OFFSET = 12;
+const LED_CONFIG_SIZE = 18;
+const LED_STATES_OFFSET = 84;
+const LED_STATE_SIZE = 3;
+
+function createDeviceStateBuffer(): ArrayBuffer {
+  const buffer = new ArrayBuffer(PAYLOAD_SIZE);
+  const view = new DataView(buffer);
+
+  view.setBigInt64(0, BigInt(1707343800000), true);
+  view.setUint16(PIR_STATE_OFFSET, 0x010f, true);
+  view.setUint16(PIR_OVERRIDE_OFFSET, 0x00f0, true);
+
+  const ledConfigs = [
+    {
+      brightness: 1000,
+      rampOnMs: 200,
+      holdOnMs: 5000,
+      rampOffMs: 500,
+      waitOnMs: 30000,
+      pirMaskOn: 0xffff,
+      pirMaskOff: 0x0000,
+    },
+    {
+      brightness: 800,
+      rampOnMs: 300,
+      holdOnMs: 3000,
+      rampOffMs: 600,
+      waitOnMs: 1000,
+      pirMaskOn: 0x0102,
+      pirMaskOff: 0x0002,
+    },
+  ];
+
+  for (let i = 0; i < ledConfigs.length; i += 1) {
+    const offset = LED_CONFIGS_OFFSET + i * LED_CONFIG_SIZE;
+    const config = ledConfigs[i];
+    view.setInt16(offset, config.brightness, true);
+    view.setInt16(offset + 2, config.rampOnMs, true);
+    view.setUint32(offset + 4, config.holdOnMs, true);
+    view.setInt16(offset + 8, config.rampOffMs, true);
+    view.setUint32(offset + 10, config.waitOnMs, true);
+    view.setUint16(offset + 14, config.pirMaskOn, true);
+    view.setUint16(offset + 16, config.pirMaskOff, true);
+  }
+
+  view.setInt16(LED_STATES_OFFSET, 500, true);
+  view.setUint8(LED_STATES_OFFSET + 2, 1);
+  view.setInt16(LED_STATES_OFFSET + LED_STATE_SIZE, 300, true);
+  view.setUint8(LED_STATES_OFFSET + LED_STATE_SIZE + 2, 2);
+
+  return buffer;
 }
 
 describe('BufferDeviceState', () => {
@@ -24,14 +67,14 @@ describe('BufferDeviceState', () => {
   });
 
   describe('with realistic device data', () => {
-    it('should decode a complete real-world device state from binary fixture', () => {
-      const buffer = loadFixture('device-state.bin');
+    it('should decode a complete real-world device state buffer', () => {
+      const buffer = createDeviceStateBuffer();
       const state = new BufferDeviceState(buffer, fieldMap);
 
       // Verify scalar values from fixture
       expect(state.getTimestamp()).toBe(1707343800000);
-      expect(state.getPirState()).toBe(0x0f);
-      expect(state.getPirOverride()).toBe(0x00);
+      expect(state.getPirState()).toBe(0x010f);
+      expect(state.getPirOverride()).toBe(0x00f0);
 
       // Verify LED configs
       const config0 = state.getLedConfig(0);
@@ -40,7 +83,7 @@ describe('BufferDeviceState', () => {
       expect(config0.holdOnMs).toBe(5000);
       expect(config0.rampOffMs).toBe(500);
       expect(config0.waitOnMs).toBe(30000);
-      expect(config0.pirMaskOn).toBe(0xff);
+      expect(config0.pirMaskOn).toBe(0xffff);
       expect(config0.pirMaskOff).toBe(0x00);
 
       const config1 = state.getLedConfig(1);
@@ -59,17 +102,17 @@ describe('BufferDeviceState', () => {
     });
 
     it('should decode device state with negative brightness values', () => {
-      const buffer = new ArrayBuffer(86);
+      const buffer = new ArrayBuffer(PAYLOAD_SIZE);
       const view = new DataView(buffer);
 
-      // Offset 10: LED config 0
-      view.setInt16(10, -100, true); // brightness
-      view.setInt16(12, -50, true); // rampOnMs
-      view.setInt32(14, -1000, true); // holdOnMs
+      // LED config 0
+      view.setInt16(LED_CONFIGS_OFFSET, -100, true); // brightness
+      view.setInt16(LED_CONFIGS_OFFSET + 2, -50, true); // rampOnMs
+      view.setInt32(LED_CONFIGS_OFFSET + 4, -1000, true); // holdOnMs
 
-      // Offset 74: LED state 0
-      view.setInt16(74, -500, true); // brightness
-      view.setUint8(76, 0); // state
+      // LED state 0
+      view.setInt16(LED_STATES_OFFSET, -500, true); // brightness
+      view.setUint8(LED_STATES_OFFSET + 2, 0); // state
 
       const state = new BufferDeviceState(buffer, fieldMap);
 
@@ -79,29 +122,29 @@ describe('BufferDeviceState', () => {
     });
 
     it('should decode maximum unsigned/signed values', () => {
-      const buffer = new ArrayBuffer(86);
+      const buffer = new ArrayBuffer(PAYLOAD_SIZE);
       const view = new DataView(buffer);
 
       // Timestamp with realistic large value
       view.setBigInt64(0, BigInt(1707343800000), true);
-      view.setUint8(8, 255); // pirState
-      view.setUint8(9, 255); // pirOverride
+      view.setUint16(PIR_STATE_OFFSET, 65535, true); // pirState
+      view.setUint16(PIR_OVERRIDE_OFFSET, 65535, true); // pirOverride
 
-      // LED config 0 at offset 10 with max values
-      view.setInt16(10, 32767, true); // brightness (max int16)
-      view.setInt16(12, 32767, true); // rampOnMs
-      view.setUint32(14, 4294967295, true); // holdOnMs (max uint32)
-      view.setUint32(20, 4294967295, true); // waitOnMs (max uint32)
-      view.setUint8(24, 255); // pirMaskOn (max uint8)
+      // LED config 0 with max values
+      view.setInt16(LED_CONFIGS_OFFSET, 32767, true); // brightness (max int16)
+      view.setInt16(LED_CONFIGS_OFFSET + 2, 32767, true); // rampOnMs
+      view.setUint32(LED_CONFIGS_OFFSET + 4, 4294967295, true); // holdOnMs (max uint32)
+      view.setUint32(LED_CONFIGS_OFFSET + 10, 4294967295, true); // waitOnMs (max uint32)
+      view.setUint16(LED_CONFIGS_OFFSET + 14, 65535, true); // pirMaskOn (max uint16)
 
-      // LED state 0 at offset 74
-      view.setInt16(74, 32767, true); // brightness (max int16)
-      view.setUint8(76, 3); // state
+      // LED state 0
+      view.setInt16(LED_STATES_OFFSET, 32767, true); // brightness (max int16)
+      view.setUint8(LED_STATES_OFFSET + 2, 3); // state
 
       const state = new BufferDeviceState(buffer, fieldMap);
 
       expect(state.getTimestamp()).toBe(1707343800000);
-      expect(state.getPirState()).toBe(255);
+      expect(state.getPirState()).toBe(65535);
       expect(state.getLedConfig(0).brightness).toBe(32767);
       expect(state.getLedConfig(0).holdOnMs).toBe(4294967295);
       expect(state.getLedConfig(0).waitOnMs).toBe(4294967295);
@@ -109,20 +152,20 @@ describe('BufferDeviceState', () => {
     });
 
     it('should correctly index all 4 LED configs', () => {
-      const buffer = new ArrayBuffer(86);
+      const buffer = new ArrayBuffer(PAYLOAD_SIZE);
       const view = new DataView(buffer);
 
       // Write unique brightness values to each LED config for verification
       for (let i = 0; i < 4; i++) {
-        const offset = 10 + i * 16;
+        const offset = LED_CONFIGS_OFFSET + i * LED_CONFIG_SIZE;
         view.setInt16(offset, (i + 1) * 100, true); // brightness
-        view.setUint8(offset + 14, i + 1); // pirMaskOn
-        view.setUint8(offset + 15, i + 1); // pirMaskOff
+        view.setUint16(offset + 14, 0x0100 + i + 1, true); // pirMaskOn
+        view.setUint16(offset + 16, 0x0100 + i + 1, true); // pirMaskOff
       }
 
       // Write unique brightness values to each LED state
       for (let i = 0; i < 4; i++) {
-        const offset = 74 + i * 3;
+        const offset = LED_STATES_OFFSET + i * LED_STATE_SIZE;
         view.setInt16(offset, (i + 1) * 10, true); // brightness
         view.setUint8(offset + 2, i); // state
       }
@@ -133,8 +176,8 @@ describe('BufferDeviceState', () => {
       for (let i = 0; i < 4; i++) {
         const config = state.getLedConfig(i);
         expect(config.brightness).toBe((i + 1) * 100);
-        expect(config.pirMaskOn).toBe(i + 1);
-        expect(config.pirMaskOff).toBe(i + 1);
+        expect(config.pirMaskOn).toBe(0x0100 + i + 1);
+        expect(config.pirMaskOff).toBe(0x0100 + i + 1);
       }
 
       // Each LED state should have unique values for verification
@@ -157,14 +200,14 @@ describe('BufferDeviceState', () => {
 
     it('should have correct field sizes', () => {
       expect(fieldMap.get('timestamp').size).toBe(8);
-      expect(fieldMap.get('pirState').size).toBe(1);
-      expect(fieldMap.get('pirOverride').size).toBe(1);
+      expect(fieldMap.get('pirState').size).toBe(2);
+      expect(fieldMap.get('pirOverride').size).toBe(2);
     });
 
     it('should have correct array metadata', () => {
       const ledConfigs = fieldMap.get('ledConfigs');
       expect(ledConfigs.arrayLen).toBe(4);
-      expect(ledConfigs.size).toBe(16);
+      expect(ledConfigs.size).toBe(18);
 
       const ledStates = fieldMap.get('ledStates');
       expect(ledStates.arrayLen).toBe(4);
@@ -174,9 +217,9 @@ describe('BufferDeviceState', () => {
     it('should have correct field offsets', () => {
       expect(fieldMap.get('timestamp').offset).toBe(0);
       expect(fieldMap.get('pirState').offset).toBe(8);
-      expect(fieldMap.get('pirOverride').offset).toBe(9);
-      expect(fieldMap.get('ledConfigs').offset).toBe(10);
-      expect(fieldMap.get('ledStates').offset).toBe(74);
+      expect(fieldMap.get('pirOverride').offset).toBe(10);
+      expect(fieldMap.get('ledConfigs').offset).toBe(12);
+      expect(fieldMap.get('ledStates').offset).toBe(84);
     });
 
     it('should compute offsets for primitive arrays without sub-fields', () => {
@@ -224,7 +267,7 @@ describe('BufferDeviceState', () => {
 
   describe('buffer operations', () => {
     it('should return the original buffer', () => {
-      const buffer = loadFixture('device-state.bin');
+      const buffer = createDeviceStateBuffer();
       const state = new BufferDeviceState(buffer, fieldMap);
 
       expect(state.getBuffer()).toBe(buffer);

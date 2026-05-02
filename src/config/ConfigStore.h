@@ -5,7 +5,7 @@
 
 #include <array>
 
-typedef uint8_t PirStates;
+typedef uint16_t PirStates;
 
 struct LedConfig {
     int16_t brightness;
@@ -13,8 +13,8 @@ struct LedConfig {
     uint32_t holdOnMs;
     int16_t rampOffMs;
     uint32_t waitOnMs;
-    uint8_t pirMaskOn;
-    uint8_t pirMaskOff;
+    PirStates pirMaskOn;
+    PirStates pirMaskOff;
 };
 
 struct Config {

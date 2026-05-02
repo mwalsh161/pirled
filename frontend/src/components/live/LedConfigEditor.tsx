@@ -5,7 +5,7 @@ import { isMaskEnabled } from '../ui/pir';
 
 const BRIGHTNESS_MIN = 0;
 const BRIGHTNESS_MAX = 1023;
-const TOTAL_PIR_COUNT = 8;
+const TOTAL_PIR_COUNT = 16;
 
 const TIMING_FIELDS: Array<{
   label: string;

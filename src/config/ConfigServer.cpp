@@ -34,6 +34,8 @@ void addCors(ESP8266WebServer& server) {
 };
 
 namespace {
+constexpr PirStates PIR_OVERRIDE_MASK = 0x00FF;
+
 bool parseInt32Strict(const String& value, int32_t& out) {
     if (value.length() == 0) return false;
     errno = 0;
@@ -130,7 +132,7 @@ ConfigServer::ConfigServer() : m_server(80) {
                 sendInvalidArg(m_server, "pirMaskOn");
                 return;
             }
-            ledCfg.pirMaskOn = static_cast<uint8_t>(constrain(value, 0, int(UINT8_MAX)));
+            ledCfg.pirMaskOn = static_cast<PirStates>(constrain(value, 0, int(UINT16_MAX)));
         }
         if (m_server.hasArg("pirMaskOff")) {
             int32_t value = 0;
@@ -138,7 +140,7 @@ ConfigServer::ConfigServer() : m_server(80) {
                 sendInvalidArg(m_server, "pirMaskOff");
                 return;
             }
-            ledCfg.pirMaskOff = static_cast<uint8_t>(constrain(value, 0, int(UINT8_MAX)));
+            ledCfg.pirMaskOff = static_cast<PirStates>(constrain(value, 0, int(UINT16_MAX)));
         }
         sendWireData(m_server);
     });
@@ -162,7 +164,7 @@ ConfigServer::ConfigServer() : m_server(80) {
 
     m_server.on("/pir_override", HTTP_POST, [&]() {
         // This gets ORed with what pins read.
-        // In general, best practice is to only set the 4 MSBs for the virtual PIRs.
+        // In general, best practice is to only set bits 4..7 for the virtual PIRs.
         addCors(m_server);
         if (!m_server.hasArg("val")) {
             m_server.send(400, "text/html", "Missing val parameter");
@@ -173,7 +175,7 @@ ConfigServer::ConfigServer() : m_server(80) {
             sendInvalidArg(m_server, "val");
             return;
         }
-        setPirOverrides(static_cast<PirStates>(constrain(overrideMask, 0, int(UINT8_MAX))));
+        setPirOverrides(static_cast<PirStates>(constrain(overrideMask, 0, int(PIR_OVERRIDE_MASK))));
         sendWireData(m_server);
     });
     m_server.on("/pir_override", HTTP_OPTIONS, handleOptions);

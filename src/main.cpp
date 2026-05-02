@@ -111,7 +111,7 @@ void loop() {
 
     PIR_STATES = 0;
     for (size_t i = 0; i < PIR_PINS.size(); i++) {
-        PIR_STATES |= (digitalRead(PIR_PINS[i]) == HIGH) << i;
+        PIR_STATES |= static_cast<PirStates>(digitalRead(PIR_PINS[i]) == HIGH) << i;
     }
     PIR_STATES |= CONFIG_SERVER.pirOverrides();
 

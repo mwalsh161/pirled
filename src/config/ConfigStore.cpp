@@ -12,7 +12,7 @@
 
 namespace {
 constexpr uint32_t CONFIG_MAGIC = 0x5049524C;  // "PIRL"
-constexpr uint16_t CONFIG_VERSION = 4;
+constexpr uint16_t CONFIG_VERSION = 5;
 Config s_config;
 
 constexpr uint8_t CFG_BOOT_SOURCE_STORED = 0;
@@ -32,7 +32,7 @@ void setConfigDefaults() {
     s_config.version = CONFIG_VERSION;
 
     for (size_t i = 0; i < s_config.ledConfig.size(); i++) {
-        uint8_t pirMask = (1 << i) | (1 << (i + VIRTUAL_PIR));
+        PirStates pirMask = static_cast<PirStates>((1U << i) | (1U << (i + VIRTUAL_PIR)));
         s_config.ledConfig[i] = {.brightness = 1023,
                                  .rampOnMs = 1000,
                                  .holdOnMs = 10000,
