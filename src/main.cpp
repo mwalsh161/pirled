@@ -204,10 +204,6 @@ void loop() {
     auto now = millis();
     updateResetTapWindow();
 
-    if (WIFI_MGR.update(now)) {
-        CONFIG_SERVER.handle();
-    }
-
     PIR_STATES = 0;
     for (size_t i = 0; i < PIR_PINS.size(); i++) {
         PIR_STATES |= (digitalRead(PIR_PINS[i]) == HIGH) << i;
@@ -216,5 +212,9 @@ void loop() {
 
     for (size_t i = 0; i < LEDS.size(); i++) {
         LEDS[i].update(now, PIR_STATES);
+    }
+
+    if (WIFI_MGR.update(now)) {
+        CONFIG_SERVER.handle();
     }
 }
