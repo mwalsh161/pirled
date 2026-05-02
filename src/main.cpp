@@ -96,6 +96,8 @@ void setup() {
     WIFI_MGR.setup("pirled-");
     WIFI_MGR.subscribe([](const char* hostname) { CONFIG_SERVER.onWiFiConnected(hostname); },
                        []() { CONFIG_SERVER.onWiFiDisconnected(); });
+    WIFI_MGR.subscribe([](const char* hostname) { REMOTE_PIRS.onWiFiConnected(hostname); },
+                       []() { REMOTE_PIRS.onWiFiDisconnected(); });
 
     for (const auto& pin : PIR_PINS) {
         pinMode(pin, INPUT);
