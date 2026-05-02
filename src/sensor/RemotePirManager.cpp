@@ -83,16 +83,27 @@ void logRemotePirCode(uint8_t code) {
     snprintf(message, sizeof(message), "rp,%u", code);
     log(message);
 }
+
+void logRemotePirSendCode(uint8_t code) {
+    char message[8] = "";
+    snprintf(message, sizeof(message), "rs,%u", code);
+    log(message);
+}
 }  // namespace
 
 void RemotePirManager::update(uint32_t now, PirStates localPhysicalPirStates) {
-    m_previousLocalPirStates = localPhysicalPirStates & LOCAL_PHYSICAL_PIR_MASK;
+    localPhysicalPirStates &= LOCAL_PHYSICAL_PIR_MASK;
     receivePackets(now);
+    sendLocalPirEvents(now, localPhysicalPirStates);
+    m_previousLocalPirStates = localPhysicalPirStates;
     expireSlots(now);
 }
 
 void RemotePirManager::onWiFiConnected(const char* hostname) {
-    (void)hostname;
+    if (hostname) {
+        strncpy(m_hostname, hostname, sizeof(m_hostname) - 1);
+        m_hostname[sizeof(m_hostname) - 1] = '\0';
+    }
     if (m_udpListening) return;
 
     if (m_udp.begin(REMOTE_PIR_DEFAULT_PORT) == 1) {
@@ -109,6 +120,11 @@ void RemotePirManager::onWiFiDisconnected() {
 
     m_udp.stop();
     m_udpListening = false;
+    m_hostname[0] = '\0';
+    for (auto& sendState : m_localSendStates) {
+        sendState.pendingRepeats = 0;
+        sendState.hasSentActive = false;
+    }
     clearAllRemotePirSlots();
     log("ru,3");
 }
@@ -202,6 +218,82 @@ void RemotePirManager::receivePackets(uint32_t now) {
 
         if (!matched) {
             logRemotePirCode(2);  // no configured slot matched
+        }
+    }
+}
+
+void RemotePirManager::sendLocalPirEvents(uint32_t now, PirStates localPhysicalPirStates) {
+    if (!m_udpListening || m_hostname[0] == '\0') return;
+
+    for (size_t pirIndex = 0; pirIndex < m_localSendStates.size(); pirIndex++) {
+        const PirStates pirBit = static_cast<PirStates>(1U << pirIndex);
+        const bool active = (localPhysicalPirStates & pirBit) != 0;
+        const bool wasActive = (m_previousLocalPirStates & pirBit) != 0;
+        auto& sendState = m_localSendStates[pirIndex];
+        sendState.active = active;
+
+        if (active != wasActive) {
+            queueLocalPirTransition(pirIndex, active, now);
+            continue;
+        }
+
+        if (sendState.pendingRepeats > 0 && hasElapsed(now, sendState.nextRepeatAt)) {
+            sendLocalPirEvent(pirIndex, sendState.pendingActive, sendState.seq);
+            sendState.pendingRepeats--;
+            sendState.nextRepeatAt = now + REMOTE_PIR_TRANSITION_REPEAT_SPACING_MS;
+        }
+
+        if (active &&
+            (!sendState.hasSentActive ||
+             hasElapsed(now, sendState.lastRefreshAt + REMOTE_PIR_REFRESH_MS))) {
+            sendState.seq++;
+            sendLocalPirEvent(pirIndex, true, sendState.seq);
+            sendState.lastRefreshAt = now;
+            sendState.hasSentActive = true;
+        }
+    }
+}
+
+void RemotePirManager::queueLocalPirTransition(size_t pirIndex, bool active, uint32_t now) {
+    auto& sendState = m_localSendStates[pirIndex];
+    sendState.seq++;
+    sendState.pendingActive = active;
+    sendState.pendingRepeats = REMOTE_PIR_TRANSITION_REPEAT_COUNT - 1;
+    sendState.nextRepeatAt = now + REMOTE_PIR_TRANSITION_REPEAT_SPACING_MS;
+    if (!active) {
+        sendState.hasSentActive = false;
+    }
+
+    sendLocalPirEvent(pirIndex, active, sendState.seq);
+    if (active) {
+        sendState.lastRefreshAt = now;
+        sendState.hasSentActive = true;
+    }
+}
+
+void RemotePirManager::sendLocalPirEvent(size_t pirIndex, bool active, uint32_t seq) {
+    char packet[96] = "";
+    const int length =
+        snprintf(packet, sizeof(packet), "%s,%u,%u,%lu,%lu", m_hostname,
+                 static_cast<unsigned int>(pirIndex), active ? 1U : 0U,
+                 static_cast<unsigned long>(seq),
+                 static_cast<unsigned long>(REMOTE_PIR_DEFAULT_LEASE_MS));
+    if (length <= 0 || length >= int(sizeof(packet))) {
+        logRemotePirSendCode(1);
+        return;
+    }
+
+    const auto& destinations = getConfig().eventDestinations;
+    for (const auto& destination : destinations) {
+        if (!destination.enabled || destination.host[0] == '\0') continue;
+
+        if (m_udp.beginPacket(destination.host, destination.port) != 1) {
+            logRemotePirSendCode(2);
+            continue;
+        }
+        m_udp.write(reinterpret_cast<const uint8_t*>(packet), static_cast<size_t>(length));
+        if (m_udp.endPacket() != 1) {
+            logRemotePirSendCode(3);
         }
     }
 }
