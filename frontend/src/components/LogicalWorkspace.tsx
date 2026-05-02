@@ -7,6 +7,7 @@ import GroupsSection from './workspace/GroupsSection';
 import LabelMatrixSection from './workspace/LabelMatrixSection';
 import LiveLedControlSection from './workspace/LiveLedControlSection';
 import MoodStudioSection from './workspace/MoodStudioSection';
+import RemoteSensorSharingSection from './workspace/RemoteSensorSharingSection';
 import WorkspaceHeaderSection from './workspace/WorkspaceHeaderSection';
 
 type WorkspaceTab = 'setup' | 'live' | 'moods';
@@ -219,6 +220,7 @@ export default function LogicalWorkspace() {
             onSaveLabelsForDevice={handleSaveLabelsForDevice}
           />
           <GroupsSection labels={labels} groups={groups} onCreateGroup={createGroup} onDeleteGroup={deleteGroup} />
+          <RemoteSensorSharingSection devices={resolvedDevices} />
         </div>
       ) : null}
 

@@ -31,8 +31,28 @@ export interface LedState {
   state: 0 | 1 | 2 | 3;
 }
 
+export interface PirEventDestinationConfig {
+  host: string;
+  port: number;
+  enabled: boolean;
+}
+
+export interface RemotePirConfig {
+  sourceHost: string;
+  sourcePirIndex: number;
+  leaseMs: number;
+  enabled: boolean;
+}
+
+export interface RemoteSharingConfig {
+  eventDestinations: PirEventDestinationConfig[];
+  remotePirs: RemotePirConfig[];
+}
+
 // Partial LED config for updates (any subset of fields)
 export type LedConfigUpdate = Partial<LedConfig>;
+export type PirEventDestinationConfigUpdate = Partial<PirEventDestinationConfig>;
+export type RemotePirConfigUpdate = Partial<RemotePirConfig>;
 
 export interface MoodConfig {
   name: string;
@@ -87,5 +107,8 @@ export function isLedConfig(value: unknown): value is LedConfig {
 
 const LED_COUNT = 4;
 const PHYSICAL_PIR_COUNT = 4;
+const VIRTUAL_PIR_COUNT = 4;
+const REMOTE_PIR_SLOT_COUNT = 8;
+const TOTAL_PIR_COUNT = PHYSICAL_PIR_COUNT + VIRTUAL_PIR_COUNT + REMOTE_PIR_SLOT_COUNT;
 
-export { LED_COUNT, PHYSICAL_PIR_COUNT };
+export { LED_COUNT, PHYSICAL_PIR_COUNT, REMOTE_PIR_SLOT_COUNT, TOTAL_PIR_COUNT, VIRTUAL_PIR_COUNT };

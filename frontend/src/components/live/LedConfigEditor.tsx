@@ -1,11 +1,10 @@
 import { useState } from 'react';
-import { type LedConfig, type LedConfigUpdate } from '../../types';
+import { TOTAL_PIR_COUNT, type LedConfig, type LedConfigUpdate } from '../../types';
 import PirChipGroup from '../ui/PirChipGroup';
 import { isMaskEnabled } from '../ui/pir';
 
 const BRIGHTNESS_MIN = 0;
 const BRIGHTNESS_MAX = 1023;
-const TOTAL_PIR_COUNT = 16;
 
 const TIMING_FIELDS: Array<{
   label: string;

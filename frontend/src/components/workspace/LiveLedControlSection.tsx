@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import DeviceHealthStrip from './live/DeviceHealthStrip';
 import LogicalEndpointSections from './live/LogicalEndpointSections';
+import { getRemoteSharingConfig } from '../../api';
 import { useLiveLedTransport } from '../../live/useLiveLedTransport';
 import { toDeviceUri, type LedEndpoint, type LogicalGroup } from '../../logical/types';
-import { type KnownDevice, type ResolvedDevice } from '../../types';
+import { type KnownDevice, type RemoteSharingConfig, type ResolvedDevice } from '../../types';
 
 const POLL_INTERVAL_MS = 750;
 
@@ -82,11 +83,50 @@ export default function LiveLedControlSection({
 }: LiveLedControlSectionProps) {
   const [isAutoRefreshEnabled, setIsAutoRefreshEnabled] = useState(true);
   const [collapsedGroupIds, setCollapsedGroupIds] = useState<string[]>([]);
+  const [remoteSharingByDeviceUri, setRemoteSharingByDeviceUri] = useState<Record<string, RemoteSharingConfig>>({});
 
   useEffect(() => {
     const validGroupIds = new Set(groups.map((group) => group.id));
     setCollapsedGroupIds((previous) => previous.filter((groupId) => validGroupIds.has(groupId)));
   }, [groups]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const deviceUris = devices.map((device) => toDeviceUri(device));
+
+    setRemoteSharingByDeviceUri((previous) => {
+      const next: Record<string, RemoteSharingConfig> = {};
+      for (const deviceUri of deviceUris) {
+        if (previous[deviceUri]) {
+          next[deviceUri] = previous[deviceUri];
+        }
+      }
+      return next;
+    });
+
+    void Promise.all(
+      deviceUris.map(async (deviceUri) => {
+        try {
+          const config = await getRemoteSharingConfig(deviceUri);
+          if (!cancelled) {
+            setRemoteSharingByDeviceUri((previous) => ({ ...previous, [deviceUri]: config }));
+          }
+        } catch {
+          if (!cancelled) {
+            setRemoteSharingByDeviceUri((previous) => {
+              const next = { ...previous };
+              delete next[deviceUri];
+              return next;
+            });
+          }
+        }
+      })
+    );
+
+    return () => {
+      cancelled = true;
+    };
+  }, [devices]);
 
   const collapsedGroupIdSet = useMemo(() => new Set(collapsedGroupIds), [collapsedGroupIds]);
   const visibleDeviceUris = useMemo(
@@ -111,6 +151,24 @@ export default function LiveLedControlSection({
     }
     return next;
   }, [devices, visibleDeviceUriSet]);
+  const livePirLabelsByDeviceUri = useMemo(() => {
+    const next: Record<string, string[]> = {};
+    for (const device of devices) {
+      const deviceUri = toDeviceUri(device);
+      const labels = [...(pirLabelsByDeviceUri[deviceUri] ?? [])];
+      const remoteSharing = remoteSharingByDeviceUri[deviceUri];
+      if (remoteSharing) {
+        remoteSharing.remotePirs.forEach((remotePir, slotIndex) => {
+          if (!remotePir.enabled || remotePir.sourceHost.trim().length === 0) {
+            return;
+          }
+          labels[8 + slotIndex] = `R${slotIndex} ${remotePir.sourceHost}:P${remotePir.sourcePirIndex}`;
+        });
+      }
+      next[deviceUri] = labels;
+    }
+    return next;
+  }, [devices, pirLabelsByDeviceUri, remoteSharingByDeviceUri]);
 
   const toggleGroupCollapse = useCallback((groupId: string) => {
     setCollapsedGroupIds((previous) => {
@@ -220,7 +278,7 @@ export default function LiveLedControlSection({
               groups={groups}
               collapsedGroupIds={collapsedGroupIdSet}
               onToggleGroupCollapse={toggleGroupCollapse}
-              pirLabelsByDeviceUri={pirLabelsByDeviceUri}
+              pirLabelsByDeviceUri={livePirLabelsByDeviceUri}
               snapshotsByDeviceUri={snapshotsByDeviceUri}
               draftByEndpointId={draftByEndpointId}
               dirtyByEndpointId={dirtyByEndpointId}

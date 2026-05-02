@@ -11,6 +11,12 @@ import {
   LED_COUNT,
   type KnownDevice,
   PHYSICAL_PIR_COUNT,
+  REMOTE_PIR_SLOT_COUNT,
+  type PirEventDestinationConfig,
+  type PirEventDestinationConfigUpdate,
+  type RemotePirConfig,
+  type RemotePirConfigUpdate,
+  type RemoteSharingConfig,
   type DeviceLabelMetadata,
   type DeviceSnapshot,
   type LedConfig,
@@ -195,6 +201,65 @@ function parseDeviceLabelMetadata(payload: unknown): DeviceLabelMetadata {
   }
 
   return { ledNames, ledByPir, alias: payload.alias };
+}
+
+function parsePirEventDestinationConfig(value: unknown): PirEventDestinationConfig | null {
+  if (!isRecord(value) || !isString(value.host) || !isNumber(value.port) || !isBoolean(value.enabled)) {
+    return null;
+  }
+  return {
+    host: value.host,
+    port: Math.trunc(value.port),
+    enabled: value.enabled,
+  };
+}
+
+function parseRemotePirConfig(value: unknown): RemotePirConfig | null {
+  if (
+    !isRecord(value) ||
+    !isString(value.sourceHost) ||
+    !isNumber(value.sourcePirIndex) ||
+    !isNumber(value.leaseMs) ||
+    !isBoolean(value.enabled)
+  ) {
+    return null;
+  }
+  return {
+    sourceHost: value.sourceHost,
+    sourcePirIndex: Math.trunc(value.sourcePirIndex),
+    leaseMs: Math.trunc(value.leaseMs),
+    enabled: value.enabled,
+  };
+}
+
+function parseRemoteSharingConfig(payload: unknown): RemoteSharingConfig {
+  if (!isRecord(payload) || !Array.isArray(payload.eventDestinations) || !Array.isArray(payload.remotePirs)) {
+    throw new Error('Invalid remote sharing payload');
+  }
+
+  const eventDestinations: PirEventDestinationConfig[] = [];
+  for (const value of payload.eventDestinations) {
+    const parsed = parsePirEventDestinationConfig(value);
+    if (!parsed) {
+      throw new Error('Invalid PIR event destination payload');
+    }
+    eventDestinations.push(parsed);
+  }
+
+  const remotePirs: RemotePirConfig[] = [];
+  for (const value of payload.remotePirs) {
+    const parsed = parseRemotePirConfig(value);
+    if (!parsed) {
+      throw new Error('Invalid remote PIR payload');
+    }
+    remotePirs.push(parsed);
+  }
+
+  if (remotePirs.length !== REMOTE_PIR_SLOT_COUNT) {
+    throw new Error('Invalid remote PIR slot count');
+  }
+
+  return { eventDestinations, remotePirs };
 }
 
 function parseSchema(payload: unknown): SchemaField[] {
@@ -450,6 +515,59 @@ export async function setLedConfig(
   });
   if (!response.ok) throw new Error('Failed to set LED config');
   return response.arrayBuffer();
+}
+
+export async function getRemoteSharingConfig(deviceUri: string): Promise<RemoteSharingConfig> {
+  const response = await fetch(`http://${deviceUri}/config/remote_sharing`);
+  if (!response.ok) throw new Error('Failed to fetch remote sharing config');
+  const payload: unknown = await response.json();
+  return parseRemoteSharingConfig(payload);
+}
+
+export async function setPirEventDestinationConfig(
+  deviceUri: string,
+  index: number,
+  config: PirEventDestinationConfigUpdate
+): Promise<RemoteSharingConfig> {
+  const params = new URLSearchParams();
+  params.append('index', index.toString());
+  for (const [key, value] of Object.entries(config)) {
+    if (value !== undefined) {
+      params.append(key, value.toString());
+    }
+  }
+
+  const response = await fetch(`http://${deviceUri}/config/pir_destination`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: params.toString(),
+  });
+  if (!response.ok) throw new Error('Failed to update PIR event destination');
+  const payload: unknown = await response.json();
+  return parseRemoteSharingConfig(payload);
+}
+
+export async function setRemotePirConfig(
+  deviceUri: string,
+  index: number,
+  config: RemotePirConfigUpdate
+): Promise<RemoteSharingConfig> {
+  const params = new URLSearchParams();
+  params.append('index', index.toString());
+  for (const [key, value] of Object.entries(config)) {
+    if (value !== undefined) {
+      params.append(key, value.toString());
+    }
+  }
+
+  const response = await fetch(`http://${deviceUri}/config/remote_pir`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: params.toString(),
+  });
+  if (!response.ok) throw new Error('Failed to update remote PIR slot');
+  const payload: unknown = await response.json();
+  return parseRemoteSharingConfig(payload);
 }
 
 export async function getMoodConfigs(): Promise<MoodConfigSummary[]> {
