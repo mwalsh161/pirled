@@ -109,11 +109,12 @@ void loop() {
     auto now = millis();
     updateResetTapWindow();
 
-    PIR_STATES = 0;
+    PirStates localPirStates = 0;
     for (size_t i = 0; i < PIR_PINS.size(); i++) {
-        PIR_STATES |= static_cast<PirStates>(digitalRead(PIR_PINS[i]) == HIGH) << i;
+        localPirStates |= static_cast<PirStates>(digitalRead(PIR_PINS[i]) == HIGH) << i;
     }
-    PIR_STATES |= CONFIG_SERVER.pirOverrides();
+    REMOTE_PIRS.update(now, localPirStates);
+    PIR_STATES = localPirStates | CONFIG_SERVER.pirOverrides() | REMOTE_PIRS.remotePirStates();
 
     for (size_t i = 0; i < LEDS.size(); i++) {
         LEDS[i].update(now, PIR_STATES);

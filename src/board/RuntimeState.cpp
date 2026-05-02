@@ -25,3 +25,4 @@ PirStates PIR_STATES = 0;
 
 WiFiManager WIFI_MGR;
 ConfigServer CONFIG_SERVER;
+RemotePirManager REMOTE_PIRS;
