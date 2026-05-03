@@ -6,6 +6,8 @@
 #include <stddef.h>
 #include <string.h>
 
+#include "system/PersistentStorage.h"
+
 namespace {
 constexpr uint32_t CONFIG_MAGIC = 0x5049524C;  // "PIRL"
 constexpr uint16_t CONFIG_VERSION_V1 = 1;
@@ -221,6 +223,25 @@ struct ConfigV7 {
 
     uint32_t crc;
 };
+
+static_assert(sizeof(ConfigV1) <= LEGACY_CONFIG_STORAGE_BYTES,
+              "ConfigV1 exceeds reserved legacy config storage.");
+static_assert(sizeof(ConfigV2) <= LEGACY_CONFIG_STORAGE_BYTES,
+              "ConfigV2 exceeds reserved legacy config storage.");
+static_assert(sizeof(ConfigV3) <= LEGACY_CONFIG_STORAGE_BYTES,
+              "ConfigV3 exceeds reserved legacy config storage.");
+static_assert(sizeof(ConfigV3SingleMask) <= LEGACY_CONFIG_STORAGE_BYTES,
+              "ConfigV3SingleMask exceeds reserved legacy config storage.");
+static_assert(sizeof(ConfigV3SensorBinding) <= LEGACY_CONFIG_STORAGE_BYTES,
+              "ConfigV3SensorBinding exceeds reserved legacy config storage.");
+static_assert(sizeof(ConfigV4) <= LEGACY_CONFIG_STORAGE_BYTES,
+              "ConfigV4 exceeds reserved legacy config storage.");
+static_assert(sizeof(ConfigV5) <= LEGACY_CONFIG_STORAGE_BYTES,
+              "ConfigV5 exceeds reserved legacy config storage.");
+static_assert(sizeof(ConfigV6) <= LEGACY_CONFIG_STORAGE_BYTES,
+              "ConfigV6 exceeds reserved legacy config storage.");
+static_assert(sizeof(ConfigV7) <= LEGACY_CONFIG_STORAGE_BYTES,
+              "ConfigV7 exceeds reserved legacy config storage.");
 
 template <typename T>
 uint32_t computeLegacyCrc(const T& cfg) {
@@ -601,7 +622,6 @@ bool migrateStoredConfigFromVersion(uint16_t version, Config& targetConfig) {
         case CONFIG_VERSION_V6: {
             ConfigV6 configV6;
             if (!readConfigV6(configV6)) return false;
-
             migrateV6ChainToCurrent(configV6, targetConfig);
             return true;
         }

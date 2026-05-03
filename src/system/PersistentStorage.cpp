@@ -6,7 +6,7 @@ namespace {
 bool s_initialized = false;
 }
 
-size_t persistentBootHistoryOffset() { return CONFIG_EEPROM_OFFSET + sizeof(Config); }
+size_t persistentBootHistoryOffset() { return CONFIG_EEPROM_OFFSET + LEGACY_CONFIG_STORAGE_BYTES; }
 
 size_t persistentStorageSize() {
     return persistentBootHistoryOffset() + BOOT_HISTORY_STORAGE_BYTES;
