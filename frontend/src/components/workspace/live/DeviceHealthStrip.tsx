@@ -108,7 +108,7 @@ export default function DeviceHealthStrip({
                     disabled={isPersisting || isOffline}
                     className="rounded border border-slate-300 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-400"
                   >
-                    {isPersisting ? 'Saving...' : 'Save to Device'}
+                    {isPersisting ? 'Saving...' : 'Save To Flash'}
                   </button>
                   {isOffline ? (
                     <button

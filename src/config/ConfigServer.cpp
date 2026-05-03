@@ -219,6 +219,9 @@ ConfigServer::ConfigServer() : m_server(80) {
     m_server.on("/config/remote_sharing", HTTP_GET, [&]() { sendRemoteSharingJson(m_server); });
     m_server.on("/config/remote_sharing", HTTP_OPTIONS, handleOptions);
 
+    // Remote sharing writes are intentionally simple per-slot updates.
+    // We currently accept last-write-wins behavior rather than adding
+    // optimistic concurrency or multi-slot atomicity on the device.
     m_server.on("/config/pir_destination", HTTP_POST, [&]() {
         addCors(m_server);
 

@@ -77,6 +77,22 @@ function buildVisibleDeviceUris(
   return Array.from(visibleDeviceUris).sort();
 }
 
+function formatRemotePirLabel(
+  sourceHost: string,
+  sourcePirIndex: number,
+  devicesByName: Record<string, ResolvedDevice>,
+  pirLabelsByDeviceUri: Record<string, string[]>
+): string {
+  const sourceDevice = devicesByName[sourceHost];
+  const sourceDeviceName =
+    sourceDevice && sourceDevice.alias.trim().length > 0 ? sourceDevice.alias : sourceDevice?.name ?? sourceHost;
+  const sourceDeviceUri = sourceDevice ? toDeviceUri(sourceDevice) : null;
+  const sourcePirLabel =
+    (sourceDeviceUri ? pirLabelsByDeviceUri[sourceDeviceUri]?.[sourcePirIndex] : undefined) ??
+    `PIR ${sourcePirIndex}`;
+  return `${sourceDeviceName} / ${sourcePirLabel}`;
+}
+
 export default function LiveLedControlSection({
   knownDevices,
   devices,
@@ -168,13 +184,18 @@ export default function LiveLedControlSection({
           if (!remotePir.enabled || remotePir.sourceHost.trim().length === 0) {
             return;
           }
-          labels[8 + slotIndex] = `R${slotIndex} ${remotePir.sourceHost}:P${remotePir.sourcePirIndex}`;
+          labels[8 + slotIndex] = formatRemotePirLabel(
+            remotePir.sourceHost,
+            remotePir.sourcePirIndex,
+            resolvedDevicesByName,
+            pirLabelsByDeviceUri
+          );
         });
       }
       next[deviceUri] = labels;
     }
     return next;
-  }, [devices, pirLabelsByDeviceUri, remoteSharingByDeviceUri]);
+  }, [devices, pirLabelsByDeviceUri, remoteSharingByDeviceUri, resolvedDevicesByName]);
 
   const toggleGroupCollapse = useCallback((groupId: string) => {
     setCollapsedGroupIds((previous) => {

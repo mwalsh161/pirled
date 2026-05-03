@@ -231,7 +231,7 @@ export default function LogicalWorkspace() {
             onSaveLabelsForDevice={handleSaveLabelsForDevice}
           />
           <GroupsSection labels={labels} groups={groups} onCreateGroup={createGroup} onDeleteGroup={deleteGroup} />
-          <RemoteSensorSharingSection devices={resolvedDevices} />
+          <RemoteSensorSharingSection devices={resolvedDevices} pirLabelsByDeviceUri={pirLabelsByDeviceUri} />
         </div>
       ) : null}
 
