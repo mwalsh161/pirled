@@ -17,7 +17,9 @@ import {
   type RemotePirConfig,
   type RemotePirConfigUpdate,
   type RemoteSharingConfig,
+  type DeviceCacheState,
   type DeviceLabelMetadata,
+  type DeviceResolveFailure,
   type DeviceSnapshot,
   type LedConfig,
   type LedConfigUpdate,
@@ -75,6 +77,10 @@ function isResolvedDevice(value: unknown): value is ResolvedDevice {
     isString(value.host) &&
     Number.isInteger(value.port)
   );
+}
+
+function isDeviceResolveFailure(value: unknown): value is DeviceResolveFailure {
+  return isRecord(value) && isString(value.name) && isString(value.error);
 }
 
 function isSchemaField(value: unknown): value is SchemaField {
@@ -429,10 +435,7 @@ async function throwResponseError(response: Response, fallbackMessage: string): 
   throw new Error(message);
 }
 
-export async function getDevices(controller: AbortSignal): Promise<KnownDevice[]> {
-  const response = await fetch(`${API_BASE}/devices`, { signal: controller });
-  if (!response.ok) throw new Error('Failed to fetch devices');
-  const payload: unknown = await response.json();
+function parseKnownDevices(payload: unknown): KnownDevice[] {
   if (!Array.isArray(payload)) {
     throw new Error('Invalid devices payload');
   }
@@ -453,33 +456,74 @@ export async function getDevices(controller: AbortSignal): Promise<KnownDevice[]
   return devices;
 }
 
-export async function discoverDevices(controller: AbortSignal): Promise<void> {
-  const response = await fetch(`${API_BASE}/devices/discover`, {
-    method: 'POST',
-    signal: controller,
-  });
-  if (!response.ok) throw new Error('Failed to discover mDNS devices');
-}
-
-export async function resolveDevices(controller: AbortSignal): Promise<ResolvedDevice[]> {
-  const response = await fetch(`${API_BASE}/devices/resolve`, {
-    method: 'POST',
-    signal: controller,
-  });
-  if (!response.ok) throw new Error('Failed to resolve device IPs');
-  const payload: unknown = await response.json();
-  if (!isRecord(payload) || !Array.isArray(payload.resolved)) {
-    throw new Error('Invalid resolve response payload');
+function parseResolvedDevices(payload: unknown): ResolvedDevice[] {
+  if (!Array.isArray(payload)) {
+    throw new Error('Invalid resolved devices payload');
   }
   const devices: ResolvedDevice[] = [];
-  for (let index = 0; index < payload.resolved.length; index += 1) {
-    const candidate = payload.resolved[index];
+  for (let index = 0; index < payload.length; index += 1) {
+    const candidate = payload[index];
     if (!isResolvedDevice(candidate)) {
       throw new Error(`Invalid resolved device payload at index ${index}`);
     }
     devices.push(candidate);
   }
   return devices;
+}
+
+function parseDeviceResolveFailures(payload: unknown): DeviceResolveFailure[] {
+  if (!Array.isArray(payload)) {
+    throw new Error('Invalid resolve failures payload');
+  }
+  const failures: DeviceResolveFailure[] = [];
+  for (let index = 0; index < payload.length; index += 1) {
+    const candidate = payload[index];
+    if (!isDeviceResolveFailure(candidate)) {
+      throw new Error(`Invalid resolve failure payload at index ${index}`);
+    }
+    failures.push(candidate);
+  }
+  return failures;
+}
+
+function parseDeviceCacheState(payload: unknown): DeviceCacheState {
+  if (!isRecord(payload)) {
+    throw new Error('Invalid device cache payload');
+  }
+  const refreshedAt = payload.refreshedAt;
+  if (refreshedAt !== null && refreshedAt !== undefined && (!isNumber(refreshedAt) || !Number.isInteger(refreshedAt))) {
+    throw new Error('Invalid device cache timestamp');
+  }
+  return {
+    known: parseKnownDevices(payload.known),
+    resolved: parseResolvedDevices(payload.resolved),
+    failed: parseDeviceResolveFailures(payload.failed),
+    refreshedAt: refreshedAt ?? null,
+  };
+}
+
+export async function getDeviceCache(controller: AbortSignal): Promise<DeviceCacheState> {
+  const response = await fetch(`${API_BASE}/devices/cache`, { signal: controller });
+  if (!response.ok) throw new Error('Failed to fetch device cache');
+  return parseDeviceCacheState(await response.json());
+}
+
+export async function refreshDeviceCache(controller: AbortSignal): Promise<DeviceCacheState> {
+  const response = await fetch(`${API_BASE}/devices/cache/refresh`, {
+    method: 'POST',
+    signal: controller,
+  });
+  if (!response.ok) throw new Error('Failed to refresh device cache');
+  return parseDeviceCacheState(await response.json());
+}
+
+export async function retryDeviceAddress(deviceName: string, controller: AbortSignal): Promise<DeviceCacheState> {
+  const response = await fetch(`${API_BASE}/devices/${encodeURIComponent(deviceName)}/resolve`, {
+    method: 'POST',
+    signal: controller,
+  });
+  if (!response.ok) throw new Error('Failed to retry device address');
+  return parseDeviceCacheState(await response.json());
 }
 
 export async function saveDeviceConfig(deviceUri: string, timestamp: number): Promise<void> {

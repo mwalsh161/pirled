@@ -11,10 +11,12 @@ const POLL_INTERVAL_MS = 750;
 interface LiveLedControlSectionProps {
   knownDevices: KnownDevice[];
   devices: ResolvedDevice[];
+  resolveErrorsByDevice: Record<string, string>;
   endpoints: LedEndpoint[];
   groups: LogicalGroup[];
   pirLabelsByDeviceUri: Record<string, string[]>;
   firmwareVersionByDeviceUri: Record<string, string>;
+  onRetryAddress: (deviceName: string) => void;
 }
 
 function normalizeLabel(label: string): string {
@@ -78,10 +80,12 @@ function buildVisibleDeviceUris(
 export default function LiveLedControlSection({
   knownDevices,
   devices,
+  resolveErrorsByDevice,
   endpoints,
   groups,
   pirLabelsByDeviceUri,
   firmwareVersionByDeviceUri,
+  onRetryAddress,
 }: LiveLedControlSectionProps) {
   const [isAutoRefreshEnabled, setIsAutoRefreshEnabled] = useState(true);
   const [collapsedGroupIds, setCollapsedGroupIds] = useState<string[]>([]);
@@ -253,13 +257,14 @@ export default function LiveLedControlSection({
 
       {knownDevices.length === 0 ? (
         <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-4 text-sm text-slate-600">
-          No known devices available yet. Discover devices to start.
+          No known devices in the cache yet. Refresh the device cache to start.
         </div>
       ) : (
         <div className="space-y-6">
           <DeviceHealthStrip
             knownDevices={knownDevices}
             resolvedDevicesByName={resolvedDevicesByName}
+            resolveErrorsByDevice={resolveErrorsByDevice}
             deviceHealthByUri={deviceHealthByUri}
             firmwareVersionByDeviceUri={firmwareVersionByDeviceUri}
             persistingByDeviceUri={persistingByDeviceUri}
@@ -270,10 +275,11 @@ export default function LiveLedControlSection({
             onRetryDevice={(device) => {
               void retryDevice(device);
             }}
+            onRetryAddress={onRetryAddress}
           />
           {devices.length === 0 ? (
             <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-4 text-sm text-slate-600">
-              No resolved devices available yet. Discover devices and retry resolution.
+              No resolved devices in the cache yet. Refresh the device cache or retry an unresolved address.
             </div>
           ) : (
             <LogicalEndpointSections

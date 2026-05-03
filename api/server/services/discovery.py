@@ -2,11 +2,17 @@ from __future__ import annotations
 
 import socket
 import threading
+import time
 
 from zeroconf import ServiceBrowser, ServiceListener, Zeroconf
 
 from ..config import DEVICE_NAME_PREFIX, MDNS_SERVICE_TYPE
-from ..schemas import KnownDeviceResponse, ResolvedDeviceResponse
+from ..schemas import (
+    DeviceCacheResponse,
+    KnownDeviceResponse,
+    ResolvedDeviceResponse,
+    ResolveFailureResponse,
+)
 from ..stores.metadata_store import load_metadata, metadata_alias_value
 
 DISCOVERED_SERVICES: set[tuple[str, str]] = {
@@ -15,6 +21,8 @@ DISCOVERED_SERVICES: set[tuple[str, str]] = {
 }
 SERVICE_BY_DEVICE_NAME: dict[str, tuple[str, str]] = {}
 RESOLVED_DEVICE_BY_NAME: dict[str, dict[str, object]] = {}
+RESOLVE_FAILURE_BY_NAME: dict[str, str] = {}
+DEVICE_CACHE_REFRESHED_AT: int | None = None
 DISCOVERY_STATE_LOCK = threading.Lock()
 DISCOVERY_START_LOCK = threading.Lock()
 MDNS_BROWSER: ServiceBrowser | None = None
@@ -117,18 +125,56 @@ def _resolve_device_name(
     return payload, None
 
 
-def resolve_devices_now() -> tuple[list[dict[str, object]], list[dict[str, str]]]:
+def _known_device_names_from_metadata() -> set[str]:
+    metadata = load_metadata()
+    return {key for key in metadata.keys() if isinstance(key, str) and key.strip()}
+
+
+def _resolve_target_names() -> list[str]:
+    config_device_names = _known_device_names_from_metadata()
     with DISCOVERY_STATE_LOCK:
-        target_names = sorted(SERVICE_BY_DEVICE_NAME.keys())
+        discovered_device_names = set(SERVICE_BY_DEVICE_NAME.keys())
+    return sorted(config_device_names | discovered_device_names)
+
+
+def _record_resolve_result(device_name: str, error: str | None) -> None:
+    with DISCOVERY_STATE_LOCK:
+        if error is None:
+            RESOLVE_FAILURE_BY_NAME.pop(device_name, None)
+        else:
+            RESOLVE_FAILURE_BY_NAME[device_name] = error
+
+
+def _mark_device_cache_refreshed() -> None:
+    global DEVICE_CACHE_REFRESHED_AT
+    with DISCOVERY_STATE_LOCK:
+        DEVICE_CACHE_REFRESHED_AT = int(time.time() * 1000)
+
+
+def resolve_devices_now() -> tuple[list[dict[str, object]], list[dict[str, str]]]:
+    sync_device_name_index_from_discovery()
+    target_names = _resolve_target_names()
     resolved: list[dict[str, object]] = []
     failed: list[dict[str, str]] = []
     for device_name in target_names:
         payload, error = _resolve_device_name(device_name)
         if payload is not None:
             resolved.append(payload)
+            _record_resolve_result(device_name, None)
         else:
-            failed.append({"name": device_name, "error": error or "Resolve failed"})
+            message = error or "Resolve failed"
+            failed.append({"name": device_name, "error": message})
+            _record_resolve_result(device_name, message)
+    _mark_device_cache_refreshed()
     return resolved, failed
+
+
+def resolve_device_now(device_name: str) -> tuple[dict[str, object] | None, str | None]:
+    sync_device_name_index_from_discovery()
+    payload, error = _resolve_device_name(device_name)
+    _record_resolve_result(device_name, error)
+    _mark_device_cache_refreshed()
+    return payload, error
 
 
 def list_resolved_devices() -> list[ResolvedDeviceResponse]:
@@ -156,6 +202,23 @@ def list_resolved_devices() -> list[ResolvedDeviceResponse]:
     )
 
 
+def list_resolve_failures() -> list[ResolveFailureResponse]:
+    known_names = _known_device_names_from_metadata()
+    with DISCOVERY_STATE_LOCK:
+        known_names.update(SERVICE_BY_DEVICE_NAME.keys())
+        failures = dict(RESOLVE_FAILURE_BY_NAME)
+    return [
+        ResolveFailureResponse(name=name, error=error)
+        for name, error in sorted(failures.items(), key=lambda item: item[0].lower())
+        if name in known_names
+    ]
+
+
+def get_device_cache_refreshed_at() -> int | None:
+    with DISCOVERY_STATE_LOCK:
+        return DEVICE_CACHE_REFRESHED_AT
+
+
 def list_known_devices() -> list[KnownDeviceResponse]:
     metadata = load_metadata()
     config_device_names = {
@@ -180,6 +243,15 @@ def list_known_devices() -> list[KnownDeviceResponse]:
             )
         )
     return payload
+
+
+def get_device_cache() -> DeviceCacheResponse:
+    return DeviceCacheResponse(
+        known=list_known_devices(),
+        resolved=list_resolved_devices(),
+        failed=list_resolve_failures(),
+        refreshedAt=get_device_cache_refreshed_at(),
+    )
 
 
 def start_mdns() -> None:

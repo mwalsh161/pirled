@@ -15,6 +15,7 @@ interface LabelMatrixSectionProps {
   aliasesByDevice: Record<string, string>;
   pirAssignmentsByDevice: Record<string, number[]>;
   dirtyLabelDevices: Record<string, boolean>;
+  resolveErrorsByDevice: Record<string, string>;
   resolvedDevicesByName: Record<string, ResolvedDevice>;
   snapshotsByDeviceUri: Record<string, DeviceSnapshot>;
   deviceHealthByUri: Record<string, DeviceLiveHealth>;
@@ -22,6 +23,7 @@ interface LabelMatrixSectionProps {
   hasCompletedLabelSetup: boolean;
   onSetActiveDeviceUri: (deviceUri: string | null) => void;
   onRetryDevice: (deviceName: string) => void;
+  onRetryAddress: (deviceName: string) => void;
   onUpdateLabel: (endpointId: string, label: string) => void;
   onUpdateAlias: (deviceName: string, alias: string) => void;
   onAssignDefaultPir: (deviceName: string, ledIndex: number, pirIndex: number) => void;
@@ -86,6 +88,7 @@ export default function LabelMatrixSection({
   aliasesByDevice,
   pirAssignmentsByDevice,
   dirtyLabelDevices,
+  resolveErrorsByDevice,
   resolvedDevicesByName,
   snapshotsByDeviceUri,
   deviceHealthByUri,
@@ -93,6 +96,7 @@ export default function LabelMatrixSection({
   hasCompletedLabelSetup,
   onSetActiveDeviceUri,
   onRetryDevice,
+  onRetryAddress,
   onUpdateLabel,
   onUpdateAlias,
   onAssignDefaultPir,
@@ -197,6 +201,7 @@ export default function LabelMatrixSection({
             const snapshot = deviceUri ? snapshotsByDeviceUri[deviceUri] : undefined;
             const health = deviceUri ? deviceHealthByUri[deviceUri] : undefined;
             const tone: DisplayTone = !resolved ? 'unresolved' : health?.tone ?? 'idle';
+            const lastError = health?.lastError ?? (!resolved ? resolveErrorsByDevice[device.name] : undefined);
             const isOpen = openDeviceName === device.name;
             const pirLabels = Array.from({ length: PHYSICAL_PIR_COUNT }, (_, pirIndex) => `PIR ${pirIndex}`);
             const isOffline = tone === 'offline';
@@ -214,12 +219,23 @@ export default function LabelMatrixSection({
                   {...(deviceUri && firmwareVersionByDeviceUri[deviceUri]
                     ? { versionText: firmwareVersionByDeviceUri[deviceUri] }
                     : {})}
-                  {...(health?.lastError ? { errorText: health.lastError } : {})}
+                  {...(lastError ? { errorText: lastError } : {})}
                   onHeaderClick={() => {
                     setOpenDeviceName((previous) => (previous === device.name ? null : device.name));
                   }}
                   actions={
                     <div className="flex items-center gap-2">
+                      {!resolved ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onRetryAddress(device.name);
+                          }}
+                          className="rounded border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                        >
+                          Retry Address
+                        </button>
+                      ) : null}
                       {isOffline ? (
                         <button
                           type="button"

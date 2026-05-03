@@ -14,6 +14,18 @@ export interface ResolvedDevice {
   port: number;
 }
 
+export interface DeviceResolveFailure {
+  name: string;
+  error: string;
+}
+
+export interface DeviceCacheState {
+  known: KnownDevice[];
+  resolved: ResolvedDevice[];
+  failed: DeviceResolveFailure[];
+  refreshedAt: number | null;
+}
+
 // Complete LED config with all fields (as returned from device)
 export interface LedConfig {
   brightness: number;

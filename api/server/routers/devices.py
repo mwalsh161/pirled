@@ -3,18 +3,14 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 
 from ..schemas import (
+    DeviceCacheResponse,
     DeviceLabelMetadataModel,
-    DiscoverDevicesResponse,
-    KnownDeviceResponse,
-    ResolveDevicesResponse,
-    ResolveFailureResponse,
     UpdateDeviceLabelsResponse,
 )
 from ..services.discovery import (
-    list_known_devices,
-    list_resolved_devices,
+    get_device_cache,
+    resolve_device_now,
     resolve_devices_now,
-    sync_device_name_index_from_discovery,
 )
 from ..stores.metadata_store import (
     default_device_label_metadata,
@@ -27,27 +23,21 @@ from ..stores.metadata_store import (
 router = APIRouter()
 
 
-@router.get("/devices")
-def get_devices() -> list[KnownDeviceResponse]:
-    return list_known_devices()
+@router.get("/devices/cache", response_model=DeviceCacheResponse)
+def get_devices_cache() -> DeviceCacheResponse:
+    return get_device_cache()
 
 
-@router.post("/devices/discover", response_model=DiscoverDevicesResponse)
-def discover_devices() -> DiscoverDevicesResponse:
-    discovered_names = sync_device_name_index_from_discovery()
-    return DiscoverDevicesResponse(status="ok", discovered=discovered_names)
+@router.post("/devices/cache/refresh", response_model=DeviceCacheResponse)
+def refresh_devices_cache() -> DeviceCacheResponse:
+    resolve_devices_now()
+    return get_device_cache()
 
 
-@router.post("/devices/resolve", response_model=ResolveDevicesResponse)
-def resolve_devices() -> ResolveDevicesResponse:
-    _, failed = resolve_devices_now()
-    resolved = list_resolved_devices()
-    return ResolveDevicesResponse(
-        status="ok",
-        requestedCount=len(resolved) + len(failed),
-        resolved=resolved,
-        failed=[ResolveFailureResponse.model_validate(item) for item in failed],
-    )
+@router.post("/devices/{device_name}/resolve", response_model=DeviceCacheResponse)
+def resolve_device(device_name: str) -> DeviceCacheResponse:
+    resolve_device_now(device_name)
+    return get_device_cache()
 
 
 @router.get("/devices/{device_name}/led-names", response_model=DeviceLabelMetadataModel)

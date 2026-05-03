@@ -6,12 +6,14 @@ import DeviceStatusCard, { type DeviceStatusTone } from '../shared/DeviceStatusC
 interface DeviceHealthStripProps {
   knownDevices: KnownDevice[];
   resolvedDevicesByName: Record<string, ResolvedDevice>;
+  resolveErrorsByDevice: Record<string, string>;
   deviceHealthByUri: Record<string, DeviceLiveHealth>;
   firmwareVersionByDeviceUri: Record<string, string>;
   persistingByDeviceUri: Record<string, boolean>;
   pausedByDeviceUri: Record<string, boolean>;
   onPersistDevice: (device: ResolvedDevice) => void;
   onRetryDevice: (device: ResolvedDevice) => void;
+  onRetryAddress: (deviceName: string) => void;
 }
 
 function secondsAgo(timestamp?: number): string {
@@ -25,12 +27,14 @@ function secondsAgo(timestamp?: number): string {
 export default function DeviceHealthStrip({
   knownDevices,
   resolvedDevicesByName,
+  resolveErrorsByDevice,
   deviceHealthByUri,
   firmwareVersionByDeviceUri,
   persistingByDeviceUri,
   pausedByDeviceUri,
   onPersistDevice,
   onRetryDevice,
+  onRetryAddress,
 }: DeviceHealthStripProps) {
   return (
     <div className="sticky top-2 z-20 rounded-xl border border-slate-200 bg-white/95 p-2 shadow-sm backdrop-blur">
@@ -40,6 +44,7 @@ export default function DeviceHealthStrip({
           const trimmedAlias = knownDevice.alias.trim();
           const deviceDisplayName = trimmedAlias.length > 0 ? trimmedAlias : knownDevice.name;
           if (!resolvedDevice) {
+            const resolveError = resolveErrorsByDevice[knownDevice.name];
             return (
               <DeviceStatusCard
                 key={knownDevice.name}
@@ -47,7 +52,19 @@ export default function DeviceHealthStrip({
                 deviceDisplayName={deviceDisplayName}
                 tone="unresolved"
                 metaText="unresolved | q:0 | last never"
-                detailText="Not reachable"
+                detailText="Address unresolved"
+                {...(resolveError ? { errorText: resolveError } : {})}
+                actions={
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onRetryAddress(knownDevice.name);
+                    }}
+                    className="rounded border border-slate-300 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-100"
+                  >
+                    Retry Address
+                  </button>
+                }
               />
             );
           }

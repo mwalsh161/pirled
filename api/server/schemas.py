@@ -66,11 +66,6 @@ class KnownDeviceResponse(FrozenModel):
     resolved: bool
 
 
-class DiscoverDevicesResponse(FrozenModel):
-    status: Literal["ok"]
-    discovered: list[str]
-
-
 class ResolveFailureResponse(FrozenModel):
     name: str
     error: str
@@ -83,11 +78,11 @@ class ResolvedDeviceResponse(FrozenModel):
     port: int
 
 
-class ResolveDevicesResponse(FrozenModel):
-    status: Literal["ok"]
-    requestedCount: int
+class DeviceCacheResponse(FrozenModel):
+    known: list[KnownDeviceResponse]
     resolved: list[ResolvedDeviceResponse]
     failed: list[ResolveFailureResponse]
+    refreshedAt: StrictInt | None = None
 
 
 class DeviceLabelMetadataModel(FrozenModel):
@@ -289,10 +284,9 @@ __all__ = [
     "MoodScheduleUpdateRequest",
     "DeleteScheduleResponse",
     "KnownDeviceResponse",
-    "DiscoverDevicesResponse",
     "ResolveFailureResponse",
     "ResolvedDeviceResponse",
-    "ResolveDevicesResponse",
+    "DeviceCacheResponse",
     "DeviceLabelMetadataModel",
     "UpdateDeviceLabelsResponse",
     "LogicalGroupModel",

@@ -6,16 +6,16 @@ import {
   deleteMoodSchedule as deleteMoodScheduleRequest,
   deleteLogicalGroup,
   deleteMoodConfig,
-  discoverDevices as discoverMdnsDevices,
   fetchDeviceSnapshot,
+  getDeviceCache,
   getDeviceLabelMetadata,
-  getDevices,
   getLogicalGroups,
   getMoodApplyStatus,
   getMoodConfig,
   getMoodConfigs,
   getMoodSchedules,
-  resolveDevices,
+  refreshDeviceCache as refreshDeviceCacheRequest,
+  retryDeviceAddress as retryDeviceAddressRequest,
   saveDeviceLabelMetadata,
   saveMoodConfig,
   updateMoodSchedule as updateMoodScheduleRequest,
@@ -23,7 +23,9 @@ import {
 import {
   LED_COUNT,
   PHYSICAL_PIR_COUNT,
+  type DeviceCacheState,
   type DeviceLabelMetadata,
+  type DeviceResolveFailure,
   type DeviceSnapshot,
   type KnownDevice,
   type LedConfig,
@@ -66,7 +68,7 @@ interface RefreshGroupsOptions {
 }
 
 interface RefreshDevicesOptions {
-  discover?: boolean;
+  refreshCache?: boolean;
   preserveExistingState?: boolean;
 }
 
@@ -152,6 +154,22 @@ function buildEndpoints(
   });
 }
 
+function buildResolvedDevicesByName(resolvedDevices: ResolvedDevice[]): Record<string, ResolvedDevice> {
+  const next: Record<string, ResolvedDevice> = {};
+  for (const device of resolvedDevices) {
+    next[device.name] = device;
+  }
+  return next;
+}
+
+function buildResolveErrorsByDevice(failures: DeviceResolveFailure[]): Record<string, string> {
+  const next: Record<string, string> = {};
+  for (const failure of failures) {
+    next[failure.name] = failure.error;
+  }
+  return next;
+}
+
 function buildLabels(endpoints: LedEndpoint[]): string[] {
   return Array.from(new Set(endpoints.map((endpoint) => normalizeLabel(endpoint.label)).filter((label) => label.length > 0))).sort(
     (left, right) => left.localeCompare(right)
@@ -207,6 +225,8 @@ function sortMoodSchedules(schedules: MoodSchedule[]): MoodSchedule[] {
 export function useLogicalWorkspace({ moodPollingEnabled = false }: UseLogicalWorkspaceOptions = {}) {
   const [devices, setDevices] = useState<KnownDevice[]>([]);
   const [resolvedDevicesByName, setResolvedDevicesByName] = useState<Record<string, ResolvedDevice>>({});
+  const [resolveErrorsByDevice, setResolveErrorsByDevice] = useState<Record<string, string>>({});
+  const [deviceCacheRefreshedAt, setDeviceCacheRefreshedAt] = useState<number | null>(null);
   const [aliasesByDevice, setAliasesByDevice] = useState<Record<string, string>>({});
   const [persistedAliasesByDevice, setPersistedAliasesByDevice] = useState<Record<string, string>>({});
   const [labelsByEndpoint, setLabelsByEndpoint] = useState<Record<string, string>>({});
@@ -294,24 +314,20 @@ export function useLogicalWorkspace({ moodPollingEnabled = false }: UseLogicalWo
     }
   }, []);
 
-  const refreshDevices = useCallback(async (options: RefreshDevicesOptions = {}) => {
-    const requestToken = deviceRequestTokenRef.current + 1;
-    deviceRequestTokenRef.current = requestToken;
-    deviceAbortControllerRef.current?.abort();
-
-    const controller = new AbortController();
-    deviceAbortControllerRef.current = controller;
-    const statusToken = startStatus(
-      options.discover ? 'Discovering new devices and loading labels...' : 'Loading known devices and labels...'
-    );
-
-    try {
-      if (options.discover) {
-        await discoverMdnsDevices(controller.signal);
-      }
-
-      const knownDevices = await getDevices(controller.signal);
-      const sorted = [...knownDevices].sort((left, right) => left.name.localeCompare(right.name));
+  const hydrateDeviceCache = useCallback(
+    async (
+      cache: DeviceCacheState,
+      controller: AbortController,
+      requestToken: number,
+      preserveExistingState: boolean
+    ) => {
+      const resolvedByName = buildResolvedDevicesByName(cache.resolved);
+      const sorted = [...cache.known]
+        .map((device) => ({
+          ...device,
+          resolved: Boolean(resolvedByName[device.name]),
+        }))
+        .sort((left, right) => left.name.localeCompare(right.name));
       const nextLabels: Record<string, string> = {};
       const nextPirAssignments: Record<string, number[]> = {};
       const nextAliases: Record<string, string> = {};
@@ -347,13 +363,13 @@ export function useLogicalWorkspace({ moodPollingEnabled = false }: UseLogicalWo
       );
 
       if (controller.signal.aborted || deviceRequestTokenRef.current !== requestToken) {
-        return;
+        return null;
       }
 
-      const preserveExistingState = options.preserveExistingState ?? options.discover ?? false;
-      if (preserveExistingState) {
-        const discoveredDeviceNameSet = new Set(sorted.map((device) => device.name));
+      setDeviceCacheRefreshedAt(cache.refreshedAt);
+      setResolveErrorsByDevice(buildResolveErrorsByDevice(cache.failed));
 
+      if (preserveExistingState) {
         setDevices((previous) =>
           sorted.map((device) => {
             const existing = previous.find((entry) => entry.name === device.name);
@@ -363,15 +379,18 @@ export function useLogicalWorkspace({ moodPollingEnabled = false }: UseLogicalWo
             return {
               ...device,
               alias: existing.alias,
-              resolved: existing.resolved,
             };
           })
         );
         setResolvedDevicesByName((previous) => {
           const next: Record<string, ResolvedDevice> = {};
-          for (const [deviceName, resolved] of Object.entries(previous)) {
-            if (discoveredDeviceNameSet.has(deviceName)) {
-              next[deviceName] = resolved;
+          for (const device of sorted) {
+            const resolved = resolvedByName[device.name];
+            if (resolved) {
+              next[device.name] = {
+                ...resolved,
+                alias: previous[device.name]?.alias ?? resolved.alias,
+              };
             }
           }
           return next;
@@ -426,7 +445,7 @@ export function useLogicalWorkspace({ moodPollingEnabled = false }: UseLogicalWo
         });
       } else {
         setDevices(sorted);
-        setResolvedDevicesByName({});
+        setResolvedDevicesByName(resolvedByName);
         setAliasesByDevice(nextAliases);
         setPersistedAliasesByDevice(nextAliases);
         setLabelsByEndpoint(nextLabels);
@@ -434,44 +453,49 @@ export function useLogicalWorkspace({ moodPollingEnabled = false }: UseLogicalWo
         setPirAssignmentsByDevice(nextPirAssignments);
         setPersistedPirAssignmentsByDevice(nextPirAssignments);
       }
-      settleStatus(statusToken, { tone: 'success', message: `Loaded ${sorted.length} known devices.` });
 
-      void (async () => {
-        try {
-          const resolvedDevices = await resolveDevices(controller.signal);
-          if (controller.signal.aborted || deviceRequestTokenRef.current !== requestToken) {
-            return;
-          }
-          const resolvedByName = new Map(
-            resolvedDevices.map((device) => [device.name, device] as const)
-          );
-          setResolvedDevicesByName(() => {
-            const next: Record<string, ResolvedDevice> = {};
-            for (const device of sorted) {
-              const resolved = resolvedByName.get(device.name);
-              if (resolved) {
-                next[device.name] = resolved;
-              }
-            }
-            return next;
-          });
-          setDevices((previous) =>
-            previous.map((device) => ({
-              ...device,
-              resolved: resolvedByName.has(device.name),
-            }))
-          );
-        } catch {
-          // Keep working with known devices even if address resolution fails.
-        }
-      })();
+      return sorted;
+    },
+    []
+  );
+
+  const refreshDevices = useCallback(async (options: RefreshDevicesOptions = {}) => {
+    const requestToken = deviceRequestTokenRef.current + 1;
+    deviceRequestTokenRef.current = requestToken;
+    deviceAbortControllerRef.current?.abort();
+
+    const controller = new AbortController();
+    deviceAbortControllerRef.current = controller;
+    const statusToken = startStatus(
+      options.refreshCache ? 'Refreshing device cache...' : 'Loading cached devices and labels...'
+    );
+
+    try {
+      const cache = options.refreshCache
+        ? await refreshDeviceCacheRequest(controller.signal)
+        : await getDeviceCache(controller.signal);
+      const sorted = await hydrateDeviceCache(
+        cache,
+        controller,
+        requestToken,
+        options.preserveExistingState ?? options.refreshCache ?? false
+      );
+      if (!sorted) {
+        return;
+      }
+      settleStatus(
+        statusToken,
+        options.refreshCache
+          ? { tone: 'success', message: `Device cache refreshed for ${sorted.length} known devices.` }
+          : { tone: 'success', message: `Loaded ${sorted.length} cached devices.` }
+      );
     } catch (error) {
       if (controller.signal.aborted || deviceRequestTokenRef.current !== requestToken) {
         return;
       }
 
       const message = error instanceof Error ? error.message : 'Unknown device load error';
-      settleStatus(statusToken, { tone: 'error', message: `Failed to load devices: ${message}` });
+      settleStatus(statusToken, { tone: 'error', message: `Failed to load device cache: ${message}` });
     } finally {
       if (deviceAbortControllerRef.current === controller) {
         deviceAbortControllerRef.current = null;
@@ -480,7 +504,7 @@ export function useLogicalWorkspace({ moodPollingEnabled = false }: UseLogicalWo
         setIsBootstrapping(false);
       }
     }
-  }, [settleStatus, startStatus]);
+  }, [hydrateDeviceCache, settleStatus, startStatus]);
 
   const refreshMoods = useCallback(async (options: RefreshMoodsOptions = {}) => {
     const requestToken = moodRequestTokenRef.current + 1;
@@ -599,9 +623,48 @@ export function useLogicalWorkspace({ moodPollingEnabled = false }: UseLogicalWo
     }
   }, [settleStatus, startStatus]);
 
-  const discoverDevices = useCallback(async () => {
-    await refreshDevices({ discover: true, preserveExistingState: true });
+  const refreshDeviceCache = useCallback(async () => {
+    await refreshDevices({ refreshCache: true, preserveExistingState: true });
   }, [refreshDevices]);
+
+  const retryDeviceAddress = useCallback(
+    async (deviceName: string) => {
+      const requestToken = deviceRequestTokenRef.current + 1;
+      deviceRequestTokenRef.current = requestToken;
+      deviceAbortControllerRef.current?.abort();
+
+      const controller = new AbortController();
+      deviceAbortControllerRef.current = controller;
+      const statusToken = startStatus(`Retrying address for ${deviceName}...`);
+
+      try {
+        const cache = await retryDeviceAddressRequest(deviceName, controller.signal);
+        const sorted = await hydrateDeviceCache(cache, controller, requestToken, true);
+        if (!sorted) {
+          return;
+        }
+        const resolved = cache.resolved.some((device) => device.name === deviceName);
+        settleStatus(
+          statusToken,
+          resolved
+            ? { tone: 'success', message: `Address resolved for ${deviceName}.` }
+            : { tone: 'error', message: `Address still unresolved for ${deviceName}.` }
+        );
+      } catch (error) {
+        if (controller.signal.aborted || deviceRequestTokenRef.current !== requestToken) {
+          return;
+        }
+
+        const message = error instanceof Error ? error.message : 'Unknown address retry error';
+        settleStatus(statusToken, { tone: 'error', message: `Failed to retry address for ${deviceName}: ${message}` });
+      } finally {
+        if (deviceAbortControllerRef.current === controller) {
+          deviceAbortControllerRef.current = null;
+        }
+      }
+    },
+    [hydrateDeviceCache, settleStatus, startStatus]
+  );
 
   async function loadMoodDetail(name: string): Promise<MoodDetail> {
     const cached = moodDetails[name];
@@ -1293,11 +1356,14 @@ export function useLogicalWorkspace({ moodPollingEnabled = false }: UseLogicalWo
     hasLoadedMoodData,
     status,
     isBootstrapping,
+    resolveErrorsByDevice,
+    deviceCacheRefreshedAt,
     dirtyLabelDevices,
     dirtyLabelDeviceCount,
     hasUnsavedLabelChanges,
     refreshDevices,
-    discoverDevices,
+    refreshDeviceCache,
+    retryDeviceAddress,
     refreshMoods,
     refreshGroups,
     refreshMoodSchedules,

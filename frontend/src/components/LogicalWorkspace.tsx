@@ -57,10 +57,13 @@ export default function LogicalWorkspace() {
     hasLoadedMoodData,
     status,
     isBootstrapping,
+    resolveErrorsByDevice,
+    deviceCacheRefreshedAt,
     dirtyLabelDevices,
     dirtyLabelDeviceCount,
     hasUnsavedLabelChanges,
-    discoverDevices,
+    refreshDeviceCache,
+    retryDeviceAddress,
     refreshMoods,
     refreshMoodSchedules,
     refreshMoodApplyStatus,
@@ -176,8 +179,9 @@ export default function LogicalWorkspace() {
         status={status}
         hasUnsavedLabelChanges={hasUnsavedLabelChanges}
         dirtyLabelDeviceCount={dirtyLabelDeviceCount}
+        deviceCacheRefreshedAt={deviceCacheRefreshedAt}
         showRefreshMoods={activeTab === 'moods'}
-        onDiscoverDevices={discoverDevices}
+        onRefreshDeviceCache={refreshDeviceCache}
         onRefreshMoods={async () => {
           await refreshMoods();
         }}
@@ -204,6 +208,7 @@ export default function LogicalWorkspace() {
             aliasesByDevice={aliasesByDevice}
             pirAssignmentsByDevice={pirAssignmentsByDevice}
             dirtyLabelDevices={dirtyLabelDevices}
+            resolveErrorsByDevice={resolveErrorsByDevice}
             resolvedDevicesByName={resolvedDevicesByName}
             snapshotsByDeviceUri={setupSnapshotsByDeviceUri}
             deviceHealthByUri={setupDeviceHealthByUri}
@@ -216,6 +221,9 @@ export default function LogicalWorkspace() {
                 return;
               }
               void retrySetupDevice(resolved);
+            }}
+            onRetryAddress={(deviceName) => {
+              void retryDeviceAddress(deviceName);
             }}
             onUpdateLabel={updateLabel}
             onUpdateAlias={updateAlias}
@@ -231,10 +239,14 @@ export default function LogicalWorkspace() {
         <LiveLedControlSection
           knownDevices={devices}
           devices={resolvedDevices}
+          resolveErrorsByDevice={resolveErrorsByDevice}
           endpoints={liveEndpoints}
           groups={groups}
           pirLabelsByDeviceUri={pirLabelsByDeviceUri}
           firmwareVersionByDeviceUri={firmwareVersionByDeviceUri}
+          onRetryAddress={(deviceName) => {
+            void retryDeviceAddress(deviceName);
+          }}
         />
       ) : null}
 

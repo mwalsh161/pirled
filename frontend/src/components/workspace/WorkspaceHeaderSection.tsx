@@ -7,8 +7,9 @@ interface WorkspaceHeaderSectionProps {
   status: WorkspaceStatus;
   hasUnsavedLabelChanges: boolean;
   dirtyLabelDeviceCount: number;
+  deviceCacheRefreshedAt: number | null;
   showRefreshMoods: boolean;
-  onDiscoverDevices: () => Promise<void>;
+  onRefreshDeviceCache: () => Promise<void>;
   onRefreshMoods: () => Promise<void>;
 }
 
@@ -25,12 +26,25 @@ function statusClassName(tone: WorkspaceStatus['tone']): string {
   return 'border-gray-200 bg-gray-50 text-gray-700';
 }
 
+function formatCacheTimestamp(timestamp: number | null): string {
+  if (timestamp === null) {
+    return 'Never';
+  }
+  return new Date(timestamp).toLocaleString([], {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
 export default function WorkspaceHeaderSection({
   status,
   hasUnsavedLabelChanges,
   dirtyLabelDeviceCount,
+  deviceCacheRefreshedAt,
   showRefreshMoods,
-  onDiscoverDevices,
+  onRefreshDeviceCache,
   onRefreshMoods,
 }: WorkspaceHeaderSectionProps) {
   return (
@@ -43,15 +57,6 @@ export default function WorkspaceHeaderSection({
           </p>
         </div>
         <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={() => {
-              void onDiscoverDevices();
-            }}
-            className="rounded bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
-          >
-            Discover Devices
-          </button>
           {showRefreshMoods ? (
             <button
               type="button"
@@ -76,6 +81,18 @@ export default function WorkspaceHeaderSection({
         </span>
       </div>
       <div className={`mt-4 rounded border px-3 py-2 text-sm ${statusClassName(status.tone)}`}>{status.message}</div>
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-gray-100 pt-3 text-xs text-gray-600">
+        <span>Device cache last refreshed: {formatCacheTimestamp(deviceCacheRefreshedAt)}</span>
+        <button
+          type="button"
+          onClick={() => {
+            void onRefreshDeviceCache();
+          }}
+          className="rounded border border-gray-300 bg-white px-2.5 py-1 font-medium text-gray-700 hover:bg-gray-50"
+        >
+          Refresh Device Cache
+        </button>
+      </div>
     </section>
   );
 }
