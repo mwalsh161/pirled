@@ -1,11 +1,10 @@
 #include "net/WiFiManager.h"
 
 #include <Arduino.h>
-
 #include <cstring>
 
+#include "net/StoredWiFiCredentials.h"
 #include "debug.h"
-#include "system/Logger.h"
 
 namespace {
 constexpr unsigned long WARM_RETRY_INTERVAL_MS = 8000;
@@ -13,27 +12,26 @@ constexpr unsigned long COLD_RETRY_INITIAL_BACKOFF_MS = 10000;
 constexpr unsigned long COLD_RETRY_MAX_BACKOFF_MS = 300000;  // 5 minutes
 constexpr int WARM_RETRY_COUNT = 3;
 constexpr float BACKOFF_JITTER_RATIO = 0.1;  // 10% jitter
-constexpr uint8_t AUTO_RESEED_AFTER_COLD_RETRIES = 3;
 }  // namespace
 
 void WiFiManager::setup(const char* prefix) {
+    WiFi.persistent(false);  // Do not rewrite SDK flash config during normal boots/retries.
+    WiFi.setAutoConnect(false);
+    WiFi.setAutoReconnect(false);  // We will manage this so dependent services restart cleanly.
+    WiFi.mode(WIFI_STA);
+
     uint8_t mac[6];
     WiFi.macAddress(mac);
     snprintf(m_hostname, sizeof(m_hostname), "%s%02X%02X%02X", prefix, mac[3], mac[4], mac[5]);
 
     WiFi.setHostname(m_hostname);
-    WiFi.mode(WIFI_STA);
-    WiFi.persistent(false);  // We already read stored config, don't rewrite it.
-    WiFi.setAutoConnect(false);
-    WiFi.setAutoReconnect(false);  // We will manage to reliably restart services.
 
     D_PRINTF("MAC: %02X:%02X:%02X:%02X:%02X:%02X\n", mac[0], mac[1], mac[2], mac[3], mac[4],
              mac[5]);
     D_PRINTF("WiFi hostname set to: %s\n", m_hostname);
-    m_hasCredentials = hasCredentials();
-    if (!m_hasCredentials) {
+    if (!hasStoredWiFiCredentials()) {
         D_PRINTLN("WiFi: No stored credentials; staying offline until next boot/configuration");
-        m_state = WIFI_IDLE;
+        m_state = WIFI_DISABLED;
         return;
     }
     m_state = WIFI_COLD_RETRY;
@@ -49,17 +47,8 @@ bool WiFiManager::subscribe(ConnectedCB cb, DisconnectedCB disCB) {
     return false;
 }
 
-bool WiFiManager::hasCredentials() {
-    station_config conf;
-    if (!wifi_station_get_config(&conf)) return false;
-    size_t ssid_len = strnlen((char*)conf.ssid, sizeof(conf.ssid));
-    size_t password_len = strnlen((char*)conf.password, sizeof(conf.password));
-    return ssid_len > 0 && ssid_len < sizeof(conf.ssid) && password_len > 0 &&
-           password_len < sizeof(conf.password);
-}
-
 bool WiFiManager::update(unsigned long now) {
-    if (!m_hasCredentials) return false;
+    if (m_state == WIFI_DISABLED) return false;
 
     // `linkStatus` is the instantaneous SDK-reported WiFi link status.
     // `m_state` is this manager's retry/backoff state machine state.
@@ -77,20 +66,17 @@ bool WiFiManager::update(unsigned long now) {
             }
             return true;
         }
-    } else if (linkStatus == WL_CONNECT_FAILED) {
+    } else if (linkStatus == WL_WRONG_PASSWORD) {
         if (m_state == WIFI_CONNECTED) {
-            D_PRINTLN("WiFi: Lost connection, auth failed");
+            D_PRINTLN("WiFi: Lost connection, wrong password");
             notifyDisconnected();
         }
-        if (!m_retrySuppressed) {
-            D_PRINTLN("WiFi: Unrecoverable credential failure; suppressing retries until reboot");
+        if (m_state != WIFI_DISABLED) {
+            D_PRINTLN("WiFi: Wrong password; suppressing retries until reboot");
         }
-        m_retrySuppressed = true;
-        m_state = WIFI_IDLE;
+        m_state = WIFI_DISABLED;
         return false;
     }
-
-    if (m_retrySuppressed) return false;
 
     // Disconnected - handle state machine
     if (m_state == WIFI_CONNECTED) {
@@ -101,6 +87,9 @@ bool WiFiManager::update(unsigned long now) {
     }
 
     switch (m_state) {
+        case WIFI_DISABLED:
+            break;
+
         case WIFI_IDLE:
             // Not yet started or lost connection, move to warm retry
             D_PRINTLN("WiFi: Starting warm retries");
@@ -158,66 +147,27 @@ bool WiFiManager::update(unsigned long now) {
 }
 
 bool WiFiManager::beginWithStoredCredentials() {
-    station_config conf;
-    if (!wifi_station_get_config(&conf)) return false;
-    const char* ssid = reinterpret_cast<const char*>(conf.ssid);
-    const char* password = reinterpret_cast<const char*>(conf.password);
-    size_t ssid_len = strnlen((char*)conf.ssid, sizeof(conf.ssid));
-    size_t password_len = strnlen((char*)conf.password, sizeof(conf.password));
+    char ssid[33] = "";
+    char password[65] = "";
+    if (!readStoredWiFiCredentials(ssid, sizeof(ssid), password, sizeof(password))) return false;
 
-    if (ssid_len == 0 || ssid_len == sizeof(conf.ssid) || password_len == 0 ||
-        password_len == sizeof(conf.password))
-        return false;
-
+#if DEBUG
+    size_t password_len = strlen(password);
     D_PRINTF("Calling WiFi.begin(\"%s\", \"%c**%c\")\n", ssid, password[0],
              password[password_len - 1]);
+#endif
+    WiFi.disconnect(true, false);  // Cold retry: restart STA without erasing stored credentials.
+    delay(200);
+    WiFi.mode(WIFI_STA);
+    WiFi.setHostname(m_hostname);
     WiFi.begin(ssid, password);
-    WiFi.status();
     return true;
 }
 
 bool WiFiManager::attemptColdRetry() {
     m_coldRetryAttempts++;
     D_PRINTF("WiFi: Cold retry attempt %u\n", m_coldRetryAttempts);
-
-    if (!m_autoReseedAttempted && m_coldRetryAttempts >= AUTO_RESEED_AFTER_COLD_RETRIES) {
-        m_autoReseedAttempted = true;
-        logAt(millis(), "wa,1");  // auto-reseed trigger
-        D_PRINTLN("WiFi: Auto-reseed trigger");
-        attemptAutoReseed();
-    }
-
     return beginWithStoredCredentials();
-}
-
-bool WiFiManager::attemptAutoReseed() {
-    station_config conf;
-    if (!wifi_station_get_config(&conf)) {
-        logAt(millis(), "wa,2");  // auto-reseed read failed
-        return false;
-    }
-
-    size_t ssid_len = strnlen((char*)conf.ssid, sizeof(conf.ssid));
-    size_t password_len = strnlen((char*)conf.password, sizeof(conf.password));
-    if (ssid_len == 0 || ssid_len == sizeof(conf.ssid) || password_len == 0 ||
-        password_len == sizeof(conf.password)) {
-        logAt(millis(), "wa,3");  // auto-reseed invalid creds
-        return false;
-    }
-
-    char ssid[33] = "";
-    char password[65] = "";
-    memcpy(ssid, conf.ssid, ssid_len);
-    ssid[ssid_len] = '\0';
-    memcpy(password, conf.password, password_len);
-    password[password_len] = '\0';
-
-    WiFi.mode(WIFI_STA);
-    WiFi.persistent(true);
-    WiFi.begin(ssid, password);
-    WiFi.persistent(false);
-    logAt(millis(), "wa,4");  // auto-reseed attempted (no reboot)
-    return true;
 }
 
 void WiFiManager::notifyConnected(IPAddress ip) {

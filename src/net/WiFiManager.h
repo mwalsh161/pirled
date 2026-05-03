@@ -4,14 +4,20 @@
 
 class WiFiManager {
    public:
-    enum WiFiState { WIFI_IDLE, WIFI_WARM_RETRY, WIFI_COLD_RETRY, WIFI_BACKOFF, WIFI_CONNECTED };
+    enum WiFiState {
+        WIFI_DISABLED,
+        WIFI_IDLE,
+        WIFI_WARM_RETRY,
+        WIFI_COLD_RETRY,
+        WIFI_BACKOFF,
+        WIFI_CONNECTED
+    };
 
     using ConnectedCB = void (*)(const char*);
     using DisconnectedCB = void (*)();
 
     void setup(const char* prefix);
     bool subscribe(ConnectedCB cb, DisconnectedCB disCB);
-    bool hasCredentials();
     bool update(unsigned long now);
 
    private:
@@ -25,13 +31,9 @@ class WiFiManager {
     unsigned long m_coldRetryBackoff = 10000;
     unsigned long m_lastRetryTime = 0;
     uint8_t m_coldRetryAttempts = 0;
-    bool m_autoReseedAttempted = false;
-    bool m_hasCredentials = false;
-    bool m_retrySuppressed = false;
 
     bool beginWithStoredCredentials();
     bool attemptColdRetry();
-    bool attemptAutoReseed();
     void notifyConnected(IPAddress ip);
     void notifyDisconnected();
     unsigned long applyJitter(unsigned long baseValue);
