@@ -29,10 +29,9 @@ enum BootHistoryFlags : uint16_t {
     BOOT_FLAG_WIFI_CREDS_PRESENT = 1U << 6,
     BOOT_FLAG_WIFI_WIPE_ATTEMPTED = 1U << 7,
     BOOT_FLAG_WIFI_WIPE_SUCCEEDED = 1U << 8,
-    BOOT_FLAG_AUTO_RESEED_MARKER_SEEN = 1U << 9,
-    BOOT_FLAG_AUTO_RESEED_ATTEMPTED = 1U << 10,
-    BOOT_FLAG_AUTO_RESEED_READ_SUCCEEDED = 1U << 11,
-    BOOT_FLAG_AUTO_RESEED_RESTART_REQUESTED = 1U << 12,
+    // Bits 9-12 were previously auto-reseed flags. Leave them unused so older
+    // boot-history records do not get mislabeled after the static-IP transition.
+    BOOT_FLAG_STATIC_NETWORK_PRESENT = 1U << 13,
 };
 
 void initBootHistory(uint32_t resetReason, uint32_t tapCountCandidate);
@@ -42,8 +41,7 @@ void setBootHistoryConfigLoad(uint8_t bootSource, bool magicValid, bool versionV
                               uint32_t computedCrc, bool migrationAttempted,
                               bool migrationSucceeded, bool migrationSaveSucceeded);
 void setBootHistoryWiFiCredentialsPresent(bool present);
+void setBootHistoryStaticNetworkPresent(bool present);
 void markBootHistoryWiFiWipe(bool success);
-void markBootHistoryAutoReseedMarkerSeen();
-void markBootHistoryAutoReseedAttempt(bool readSucceeded, bool restartRequested);
 
 size_t readBootHistoryRecords(BootHistoryRecord* records, size_t maxRecords);

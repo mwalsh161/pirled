@@ -11,11 +11,35 @@ R"rawliteral(
     </head>
     <body>
         <h2>Configure WiFi</h2>
-        <form action="/save" method="POST">
+        <p>Static network settings are required on ESP8266 builds.</p>
+        <form action="/save" method="POST" id="wifi-form">
             <input name="ssid" placeholder="SSID" required maxlength="31">
+            <input name="ip" placeholder="Static IP" required>
+            <input name="gateway" placeholder="Gateway" required>
+            <input name="subnet" placeholder="Subnet mask" required>
+            <input name="dns" placeholder="DNS server" required>
             <input name="pass" placeholder="Password" type="password" maxlength="63">
             <button type="submit">Save</button>
         </form>
+        <script>
+            const form = document.getElementById('wifi-form');
+            const fields = Array.from(form.querySelectorAll('input'));
+
+            fields[0].addEventListener('paste', (event) => {
+                const text = event.clipboardData.getData('text');
+                const lines = text
+                    .split(/\r?\n/)
+                    .map((line) => line.trim())
+                    .filter((line) => line.length > 0);
+
+                if (lines.length < 2) return;
+
+                event.preventDefault();
+                for (let i = 0; i < fields.length && i < lines.length; i++) {
+                    fields[i].value = lines[i];
+                }
+            });
+        </script>
     </body>
 </html>
 )rawliteral"

@@ -16,6 +16,7 @@ class Led {
     void setTarget(int16_t* brightness, int16_t* slew_ms, unsigned long now);
 
     const int16_t& brightness() const { return m_brightness; }
+    uint8_t pin() const { return m_ledPin; }
 
    private:
     int16_t m_brightness = 0;

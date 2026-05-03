@@ -8,8 +8,12 @@ bool s_initialized = false;
 
 size_t persistentBootHistoryOffset() { return CONFIG_EEPROM_OFFSET + LEGACY_CONFIG_STORAGE_BYTES; }
 
-size_t persistentStorageSize() {
+size_t persistentStaticNetworkConfigOffset() {
     return persistentBootHistoryOffset() + BOOT_HISTORY_STORAGE_BYTES;
+}
+
+size_t persistentStorageSize() {
+    return persistentStaticNetworkConfigOffset() + STATIC_NETWORK_CONFIG_STORAGE_BYTES;
 }
 
 bool beginPersistentStorage() {

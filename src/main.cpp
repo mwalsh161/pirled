@@ -2,106 +2,45 @@
 
 #include <Arduino.h>
 #include "board/RuntimeState.h"
-#include "net/StoredWiFiCredentials.h"
 #include "net/PortalServer.h"
+#include "net/StoredWiFiCredentials.h"
 #include "system/BootHistory.h"
 #include "system/Logger.h"
 #include "system/ResetTap.h"
+#include "system/StaticNetworkConfig.h"
 #include "debug.h"
 
 namespace {
-constexpr uint32_t WIFI_RESEED_RTC_SLOT =
-    100;  // Separate from reset-tap RTC words so restart loops stay isolated.
-constexpr uint32_t WIFI_RESEED_MAGIC = 0x57524631;  // "WRF1"
-
-struct WiFiReseedState {
-    uint32_t magic;
-    uint32_t value;
-};
-
-bool writeWiFiReseedState(uint32_t value) {
-    WiFiReseedState state{.magic = value == 0 ? 0U : WIFI_RESEED_MAGIC, .value = value};
-    return ESP.rtcUserMemoryWrite(WIFI_RESEED_RTC_SLOT, reinterpret_cast<uint32_t*>(&state),
-                                  sizeof(state));
-}
-
-bool readWiFiReseedState(WiFiReseedState& state) {
-    if (!ESP.rtcUserMemoryRead(WIFI_RESEED_RTC_SLOT, reinterpret_cast<uint32_t*>(&state),
-                               sizeof(state))) {
-        return false;
-    }
-    return state.magic == WIFI_RESEED_MAGIC;
-}
-
-void clearWiFiReseedMarker() {
-    if (!writeWiFiReseedState(0)) {
-        logAt(millis(), "dr,9");  // reseed rtc clear failed
-    }
-}
-
-bool reseedWiFiCredentials() {
-    char ssid[33] = "";
-    char password[65] = "";
-    if (!readStoredWiFiCredentials(ssid, sizeof(ssid), password, sizeof(password))) {
-        logAt(millis(), "dr,4");  // reseed read failed
-        markBootHistoryAutoReseedAttempt(false, false);
-        return false;
-    }
-
-    WiFi.mode(WIFI_STA);
-    WiFi.persistent(true);
-    WiFi.begin(ssid, password);
-    WiFi.mode(WIFI_STA);  // Preserve STA as the SDK default mode for next boot.
-    WiFi.persistent(false);
-    delay(500);
-    logAt(millis(), "dr,5");  // reseed attempted
-    return true;
-}
+bool s_warningBlinkOn = false;
+unsigned long s_warningBlinkLastToggle = 0;
 
 void wipeWiFiCredentials() {
     WiFi.mode(WIFI_STA);
     WiFi.persistent(true);
     bool ok = WiFi.disconnect(true, true);  // disable STA + erase stored credentials
     WiFi.persistent(false);
+    ok = clearStaticNetworkConfig() && ok;
     logAt(millis(), ok ? "dr,6" : "dr,7");  // 6=wipe ok, 7=wipe failed
     markBootHistoryWiFiWipe(ok);
 }
 
-void maybeAutoReseedWiFiCredentials(uint32_t resetTapCount) {
-    bool hasStoredCredentials = hasStoredWiFiCredentials();
-    setBootHistoryWiFiCredentialsPresent(hasStoredCredentials);
-
-    if (resetTapCount == RESET_TAP_PORTAL || resetTapCount == RESET_TAP_WIPE) {
-        return;
+void setupWarningBlink() {
+    s_warningBlinkOn = false;
+    s_warningBlinkLastToggle = 0;
+    for (auto& ledController : LEDS) {
+        ledController.setup();
     }
+}
 
-    WiFiReseedState state{};
-    if (readWiFiReseedState(state) && state.value == 1) {
-        logAt(millis(), "dr,10");  // auto-reseed marker seen
-        markBootHistoryAutoReseedMarkerSeen();
-        clearWiFiReseedMarker();
-        return;
-    }
+void updateWarningBlink() {
+    unsigned long now = millis();
+    if (now - s_warningBlinkLastToggle < 250) return;
 
-    if (!hasStoredCredentials) {
-        logAt(millis(), "dr,11");  // auto-reseed skipped: no credentials
-        return;
+    s_warningBlinkOn = !s_warningBlinkOn;
+    s_warningBlinkLastToggle = now;
+    for (auto& ledController : LEDS) {
+        analogWrite(ledController.led().pin(), s_warningBlinkOn ? 1023 : 0);
     }
-
-    if (!writeWiFiReseedState(1)) {
-        logAt(millis(), "dr,12");  // auto-reseed marker write failed
-        return;
-    }
-
-    logAt(millis(), "dr,13");  // auto-reseed boot write
-    if (!reseedWiFiCredentials()) {
-        clearWiFiReseedMarker();
-        return;
-    }
-    logAt(millis(), "dr,14");  // auto-reseed restart requested
-    markBootHistoryAutoReseedAttempt(true, true);
-    delay(100);
-    ESP.restart();
 }
 }  // namespace
 
@@ -129,14 +68,27 @@ void setup() {
     initBootHistory(getResetReasonCode(), resetTapCount);
     D_PRINTF("Reset reason: %lu\n", static_cast<unsigned long>(getResetReasonCode()));
     D_PRINTF("Tap candidate: %lu\n", static_cast<unsigned long>(resetTapCount));
-    resetTapCount = finalizeResetTapCountAfterWindow();
+    if (resetTapCount == RESET_TAP_WIPE_ARM) {
+        D_PRINTLN("RESET_TAP_WIPE_ARM");
+        analogWriteResolution(10);
+        setupWarningBlink();
+        resetTapCount = finalizeResetTapCountAfterWindow(updateWarningBlink);
+    } else {
+        resetTapCount = finalizeResetTapCountAfterWindow();
+    }
     setBootHistoryTapCountFinal(resetTapCount);
+    setBootHistoryWiFiCredentialsPresent(hasStoredWiFiCredentials());
+    StaticNetworkConfig staticNetworkConfig{};
+    setBootHistoryStaticNetworkPresent(
+        loadStaticNetworkConfig(staticNetworkConfig) && staticNetworkConfig.enabled);
     D_PRINTF("Tap final: %lu\n", static_cast<unsigned long>(resetTapCount));
     if (resetTapCount == RESET_TAP_PORTAL) {
         D_PRINTLN("RESET_TAP_PORTAL");
         runPortalBlocking();
         D_PRINTLN("Not reachable");
         ESP.restart();  // Not reachable.
+    } else if (resetTapCount == RESET_TAP_WIPE_ARM) {
+        D_PRINTLN("RESET_TAP_WIPE_ARM_EXPIRED");
     } else if (resetTapCount == RESET_TAP_WIPE) {
         D_PRINTLN("RESET_TAP_WIPE");
         wipeWiFiCredentials();
@@ -144,8 +96,6 @@ void setup() {
     } else {
         D_PRINTLN("NO_TAP");
     }
-
-    maybeAutoReseedWiFiCredentials(resetTapCount);
 
     analogWriteResolution(10);  // For Leds.
     CONFIG_SERVER.setup();

@@ -133,27 +133,18 @@ void setBootHistoryWiFiCredentialsPresent(bool present) {
     commitCurrentRecordIfChanged(previousRecord);
 }
 
+void setBootHistoryStaticNetworkPresent(bool present) {
+    if (!s_currentRecordValid) return;
+    BootHistoryRecord previousRecord = s_currentRecord;
+    setFlag(BOOT_FLAG_STATIC_NETWORK_PRESENT, present);
+    commitCurrentRecordIfChanged(previousRecord);
+}
+
 void markBootHistoryWiFiWipe(bool success) {
     if (!s_currentRecordValid) return;
     BootHistoryRecord previousRecord = s_currentRecord;
     setFlag(BOOT_FLAG_WIFI_WIPE_ATTEMPTED, true);
     setFlag(BOOT_FLAG_WIFI_WIPE_SUCCEEDED, success);
-    commitCurrentRecordIfChanged(previousRecord);
-}
-
-void markBootHistoryAutoReseedMarkerSeen() {
-    if (!s_currentRecordValid) return;
-    BootHistoryRecord previousRecord = s_currentRecord;
-    setFlag(BOOT_FLAG_AUTO_RESEED_MARKER_SEEN, true);
-    commitCurrentRecordIfChanged(previousRecord);
-}
-
-void markBootHistoryAutoReseedAttempt(bool readSucceeded, bool restartRequested) {
-    if (!s_currentRecordValid) return;
-    BootHistoryRecord previousRecord = s_currentRecord;
-    setFlag(BOOT_FLAG_AUTO_RESEED_ATTEMPTED, true);
-    setFlag(BOOT_FLAG_AUTO_RESEED_READ_SUCCEEDED, readSucceeded);
-    setFlag(BOOT_FLAG_AUTO_RESEED_RESTART_REQUESTED, restartRequested);
     commitCurrentRecordIfChanged(previousRecord);
 }
 

@@ -2,6 +2,8 @@
 
 #include <ESP8266WiFi.h>
 
+#include "system/StaticNetworkConfig.h"
+
 #define DNS_PORT 53
 
 namespace {
@@ -32,6 +34,18 @@ bool validateArg(ESP8266WebServer& server, const char* name, char* dest, size_t 
     }
     return true;
 }
+
+bool parseIpArg(ESP8266WebServer& server, const char* name, IPAddress& out) {
+    if (!server.hasArg(name) || server.arg(name).length() == 0) {
+        server.send(400, "text/html", String("<h2>Missing IP field: ") + name + "</h2>");
+        return false;
+    }
+    if (!out.fromString(server.arg(name))) {
+        server.send(400, "text/html", String("<h2>Invalid IP field: ") + name + "</h2>");
+        return false;
+    }
+    return true;
+}
 }  // namespace
 
 PortalServer::PortalServer() : m_server(80) {
@@ -47,6 +61,22 @@ PortalServer::PortalServer() : m_server(80) {
             !validateArg(m_server, "pass", password, sizeof(password))) {
             return;  // error already sent
         }
+
+        IPAddress ip, gateway, subnet, dns;
+        if (!parseIpArg(m_server, "ip", ip) || !parseIpArg(m_server, "gateway", gateway) ||
+            !parseIpArg(m_server, "subnet", subnet) || !parseIpArg(m_server, "dns", dns)) {
+            return;
+        }
+        if (!saveStaticNetworkConfig({.enabled = true,
+                                      .ip = ip,
+                                      .gateway = gateway,
+                                      .subnet = subnet,
+                                      .dns = dns})) {
+            m_server.send(500, "text/html", "<h2>Failed to save static network config</h2>");
+            return;
+        }
+        WiFi.config(ip, gateway, subnet, dns);
+
         WiFi.persistent(true);
         WiFi.begin(ssid, password);
 

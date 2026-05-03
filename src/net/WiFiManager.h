@@ -25,5 +25,4 @@ class WiFiManager {
     bool beginWithStoredCredentials();
     void notifyConnected(IPAddress ip);
     void notifyDisconnected();
-    bool isLinkLocal(IPAddress ip);
 };

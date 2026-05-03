@@ -13,7 +13,6 @@ namespace {
 constexpr uint32_t RESET_TAP_RTC_SLOT =
     96;  // Keep clear of low RTC words used by OTA bootloader data.
 constexpr uint32_t RESET_TAP_MAGIC = 0x44524431;  // "DRD1"
-constexpr unsigned long RESET_TAP_WINDOW_MS = 5000;
 
 struct ResetTapState {
     uint32_t magic;
@@ -85,10 +84,11 @@ uint32_t readResetTapCountForBoot() {
     return currentTapCount;
 }
 
-uint32_t finalizeResetTapCountAfterWindow() {
+uint32_t finalizeResetTapCountAfterWindow(ResetTapWaitCallback callback) {
     if (!s_resetTapActiveThisBoot) return 0;
 
     while (millis() - s_resetTapStartedAtMs < RESET_TAP_WINDOW_MS) {
+        if (callback) callback();
         delay(10);
     }
 

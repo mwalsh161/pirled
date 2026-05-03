@@ -184,17 +184,8 @@ void sendBootHistoryJson(ESP8266WebServer& server) {
         appendBoolField(json, "wifiWipeSucceeded",
                         (record.flags & BOOT_FLAG_WIFI_WIPE_SUCCEEDED) != 0);
         json += ",";
-        appendBoolField(json, "autoReseedMarkerSeen",
-                        (record.flags & BOOT_FLAG_AUTO_RESEED_MARKER_SEEN) != 0);
-        json += ",";
-        appendBoolField(json, "autoReseedAttempted",
-                        (record.flags & BOOT_FLAG_AUTO_RESEED_ATTEMPTED) != 0);
-        json += ",";
-        appendBoolField(json, "autoReseedReadSucceeded",
-                        (record.flags & BOOT_FLAG_AUTO_RESEED_READ_SUCCEEDED) != 0);
-        json += ",";
-        appendBoolField(json, "autoReseedRestartRequested",
-                        (record.flags & BOOT_FLAG_AUTO_RESEED_RESTART_REQUESTED) != 0);
+        appendBoolField(json, "staticNetworkPresent",
+                        (record.flags & BOOT_FLAG_STATIC_NETWORK_PRESENT) != 0);
         json += "}}";
     }
     json += "]}";
