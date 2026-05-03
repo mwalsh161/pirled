@@ -4,6 +4,7 @@
 #include "board/RuntimeState.h"
 #include "net/StoredWiFiCredentials.h"
 #include "net/PortalServer.h"
+#include "system/BootHistory.h"
 #include "system/Logger.h"
 #include "system/ResetTap.h"
 #include "debug.h"
@@ -43,6 +44,7 @@ bool reseedWiFiCredentials() {
     char password[65] = "";
     if (!readStoredWiFiCredentials(ssid, sizeof(ssid), password, sizeof(password))) {
         logAt(millis(), "dr,4");  // reseed read failed
+        markBootHistoryAutoReseedAttempt(false, false);
         return false;
     }
 
@@ -62,9 +64,13 @@ void wipeWiFiCredentials() {
     bool ok = WiFi.disconnect(true, true);  // disable STA + erase stored credentials
     WiFi.persistent(false);
     logAt(millis(), ok ? "dr,6" : "dr,7");  // 6=wipe ok, 7=wipe failed
+    markBootHistoryWiFiWipe(ok);
 }
 
 void maybeAutoReseedWiFiCredentials(uint32_t resetTapCount) {
+    bool hasStoredCredentials = hasStoredWiFiCredentials();
+    setBootHistoryWiFiCredentialsPresent(hasStoredCredentials);
+
     if (resetTapCount == RESET_TAP_PORTAL || resetTapCount == RESET_TAP_WIPE) {
         return;
     }
@@ -72,11 +78,12 @@ void maybeAutoReseedWiFiCredentials(uint32_t resetTapCount) {
     WiFiReseedState state{};
     if (readWiFiReseedState(state) && state.value == 1) {
         logAt(millis(), "dr,10");  // auto-reseed marker seen
+        markBootHistoryAutoReseedMarkerSeen();
         clearWiFiReseedMarker();
         return;
     }
 
-    if (!hasStoredWiFiCredentials()) {
+    if (!hasStoredCredentials) {
         logAt(millis(), "dr,11");  // auto-reseed skipped: no credentials
         return;
     }
@@ -92,6 +99,7 @@ void maybeAutoReseedWiFiCredentials(uint32_t resetTapCount) {
         return;
     }
     logAt(millis(), "dr,14");  // auto-reseed restart requested
+    markBootHistoryAutoReseedAttempt(true, true);
     delay(100);
     ESP.restart();
 }
@@ -118,9 +126,11 @@ void setup() {
     D_PRINTLN("");
 
     uint32_t resetTapCount = readResetTapCountForBoot();
+    initBootHistory(getResetReasonCode(), resetTapCount);
     D_PRINTF("Reset reason: %lu\n", static_cast<unsigned long>(getResetReasonCode()));
     D_PRINTF("Tap candidate: %lu\n", static_cast<unsigned long>(resetTapCount));
     resetTapCount = finalizeResetTapCountAfterWindow();
+    setBootHistoryTapCountFinal(resetTapCount);
     D_PRINTF("Tap final: %lu\n", static_cast<unsigned long>(resetTapCount));
     if (resetTapCount == RESET_TAP_PORTAL) {
         D_PRINTLN("RESET_TAP_PORTAL");

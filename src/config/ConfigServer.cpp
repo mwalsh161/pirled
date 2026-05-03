@@ -12,6 +12,7 @@
 #include "config/WireProtocol.h"
 #include "debug.h"
 #include "ota_public_key.h"
+#include "system/BootHistory.h"
 #include "system/Logger.h"
 
 #ifndef FIRMWARE_VERSION
@@ -119,6 +120,85 @@ void sendRemoteSharingJson(ESP8266WebServer& server) {
         json += "}";
     }
     json += "]}";
+    addCors(server);
+    server.send(200, "application/json", json);
+}
+
+void appendBoolField(String& json, const char* name, bool value) {
+    json += "\"";
+    json += name;
+    json += "\":";
+    json += value ? "true" : "false";
+}
+
+void sendBootHistoryJson(ESP8266WebServer& server) {
+    BootHistoryRecord records[BOOT_HISTORY_MAX_RECORDS];
+    size_t count = readBootHistoryRecords(records, BOOT_HISTORY_MAX_RECORDS);
+
+    String json;
+    json.reserve(3072);
+    json += "{\"records\":[";
+    for (size_t i = 0; i < count; i++) {
+        if (i > 0) json += ",";
+        const BootHistoryRecord& record = records[i];
+        json += "{";
+        json += "\"bootNumber\":";
+        json += static_cast<unsigned long>(record.bootNumber);
+        json += ",\"resetReason\":";
+        json += static_cast<unsigned long>(record.resetReason);
+        json += ",\"tapCountCandidate\":";
+        json += static_cast<unsigned int>(record.tapCountCandidate);
+        json += ",\"tapCountFinal\":";
+        json += static_cast<unsigned int>(record.tapCountFinal);
+        json += ",\"bootSource\":";
+        json += static_cast<unsigned int>(record.bootSource);
+        json += ",\"storedVersion\":";
+        json += static_cast<unsigned int>(record.storedVersion);
+        json += ",\"currentVersion\":";
+        json += static_cast<unsigned int>(record.currentVersion);
+        json += ",\"storedCrc\":";
+        json += static_cast<unsigned long>(record.storedCrc);
+        json += ",\"computedCrc\":";
+        json += static_cast<unsigned long>(record.computedCrc);
+        json += ",\"flags\":{";
+        appendBoolField(json, "magicValid", (record.flags & BOOT_FLAG_MAGIC_VALID) != 0);
+        json += ",";
+        appendBoolField(json, "versionValid", (record.flags & BOOT_FLAG_VERSION_VALID) != 0);
+        json += ",";
+        appendBoolField(json, "crcValid", (record.flags & BOOT_FLAG_CRC_VALID) != 0);
+        json += ",";
+        appendBoolField(json, "migrationAttempted",
+                        (record.flags & BOOT_FLAG_MIGRATION_ATTEMPTED) != 0);
+        json += ",";
+        appendBoolField(json, "migrationSucceeded",
+                        (record.flags & BOOT_FLAG_MIGRATION_SUCCEEDED) != 0);
+        json += ",";
+        appendBoolField(json, "migrationSaveSucceeded",
+                        (record.flags & BOOT_FLAG_MIGRATION_SAVE_SUCCEEDED) != 0);
+        json += ",";
+        appendBoolField(json, "wifiCredsPresent", (record.flags & BOOT_FLAG_WIFI_CREDS_PRESENT) != 0);
+        json += ",";
+        appendBoolField(json, "wifiWipeAttempted",
+                        (record.flags & BOOT_FLAG_WIFI_WIPE_ATTEMPTED) != 0);
+        json += ",";
+        appendBoolField(json, "wifiWipeSucceeded",
+                        (record.flags & BOOT_FLAG_WIFI_WIPE_SUCCEEDED) != 0);
+        json += ",";
+        appendBoolField(json, "autoReseedMarkerSeen",
+                        (record.flags & BOOT_FLAG_AUTO_RESEED_MARKER_SEEN) != 0);
+        json += ",";
+        appendBoolField(json, "autoReseedAttempted",
+                        (record.flags & BOOT_FLAG_AUTO_RESEED_ATTEMPTED) != 0);
+        json += ",";
+        appendBoolField(json, "autoReseedReadSucceeded",
+                        (record.flags & BOOT_FLAG_AUTO_RESEED_READ_SUCCEEDED) != 0);
+        json += ",";
+        appendBoolField(json, "autoReseedRestartRequested",
+                        (record.flags & BOOT_FLAG_AUTO_RESEED_RESTART_REQUESTED) != 0);
+        json += "}}";
+    }
+    json += "]}";
+
     addCors(server);
     server.send(200, "application/json", json);
 }
@@ -361,6 +441,9 @@ ConfigServer::ConfigServer() : m_server(80) {
         }
     });
     m_server.on("/logs", HTTP_OPTIONS, handleOptions);
+
+    m_server.on("/boot_history", HTTP_GET, [&]() { sendBootHistoryJson(m_server); });
+    m_server.on("/boot_history", HTTP_OPTIONS, handleOptions);
 
     m_server.on("/firmware_version", HTTP_GET, [&]() {
         addCors(m_server);

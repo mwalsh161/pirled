@@ -7,18 +7,16 @@
 
 #include "config/ConfigMigration.h"
 #include "debug.h"
+#include "system/BootHistory.h"
 #include "system/Logger.h"
+#include "system/PersistentStorage.h"
 
 #define VIRTUAL_PIR 4
 
 namespace {
 constexpr uint32_t CONFIG_MAGIC = 0x5049524C;  // "PIRL"
-constexpr uint16_t CONFIG_VERSION = 7;
+constexpr uint16_t CONFIG_VERSION = CURRENT_CONFIG_VERSION;
 Config s_config;
-
-constexpr uint8_t CFG_BOOT_SOURCE_STORED = 0;
-constexpr uint8_t CFG_BOOT_SOURCE_DEFAULTS = 1;
-constexpr uint8_t CFG_BOOT_SOURCE_MIGRATED = 2;
 constexpr uint8_t CFG_SAVE_NO_CHANGE = 0;
 constexpr uint8_t CFG_SAVE_COMMITTED = 1;
 constexpr uint8_t CFG_SAVE_COMMIT_FAILED = 2;
@@ -69,7 +67,7 @@ RemotePirConfig& getRemotePirConfig(size_t index) { return s_config.remotePirs[i
 void setConfigTimestamp(int64_t timestamp) { s_config.timestamp = timestamp; }
 
 bool initConfig() {
-    EEPROM.begin(sizeof(Config));
+    beginPersistentStorage();
     EEPROM.get(0, s_config);
 
     uint16_t storedVersion = s_config.version;
@@ -81,11 +79,15 @@ bool initConfig() {
     bool valid = magicValid && versionValid && crcValid;
     bool recoveredStoredConfig = valid;
     uint8_t bootSource = CFG_BOOT_SOURCE_STORED;
+    bool migrationAttempted = false;
+    bool migrationSucceeded = false;
+    bool migrationSaveSucceeded = false;
 
     if (!valid) {
         if (magicValid) {
             setConfigDefaults();
         }
+        migrationAttempted = magicValid;
         if (magicValid && migrateStoredConfig(storedVersion, s_config)) {
             char migrationStatus[16] = "";
             snprintf(migrationStatus, sizeof(migrationStatus), "cm,%u,%u", storedVersion, CONFIG_VERSION);
@@ -94,7 +96,8 @@ bool initConfig() {
             D_PRINTLN("Stored config migrated");
             bootSource = CFG_BOOT_SOURCE_MIGRATED;
             recoveredStoredConfig = true;
-            saveConfig();
+            migrationSucceeded = true;
+            migrationSaveSucceeded = saveConfig();
         } else {
             D_PRINTLN("Stored config invalid, loading defaults");
             if (!magicValid) {
@@ -103,6 +106,10 @@ bool initConfig() {
             bootSource = CFG_BOOT_SOURCE_DEFAULTS;
         }
     }
+
+    setBootHistoryConfigLoad(bootSource, magicValid, versionValid, crcValid, storedVersion,
+                             CONFIG_VERSION, storedCrc, computedCrc, migrationAttempted,
+                             migrationSucceeded, migrationSaveSucceeded);
 
     // cb,<boot_source>,<valid>,<magic_ok>,<version_ok>,<crc_ok>,<stored_version>
     char bootStatus[24] = "";

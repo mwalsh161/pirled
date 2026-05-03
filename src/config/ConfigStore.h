@@ -6,12 +6,19 @@
 #include <array>
 
 typedef uint16_t PirStates;
+constexpr uint16_t CURRENT_CONFIG_VERSION = 7;
 
 constexpr size_t PIR_EVENT_DESTINATION_COUNT = 4;
 constexpr size_t REMOTE_PIR_SLOT_COUNT = 8;
 constexpr size_t REMOTE_PIR_HOST_SIZE = 32;
 constexpr uint16_t REMOTE_PIR_DEFAULT_PORT = 4210;
 constexpr uint32_t REMOTE_PIR_DEFAULT_LEASE_MS = 9000;
+
+enum ConfigBootSource : uint8_t {
+    CFG_BOOT_SOURCE_STORED = 0,
+    CFG_BOOT_SOURCE_DEFAULTS = 1,
+    CFG_BOOT_SOURCE_MIGRATED = 2,
+};
 
 struct LedConfig {
     int16_t brightness;
