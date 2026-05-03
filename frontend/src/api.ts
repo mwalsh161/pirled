@@ -562,7 +562,7 @@ export async function setLedConfig(
 
 export async function getRemoteSharingConfig(deviceUri: string): Promise<RemoteSharingConfig> {
   const response = await fetch(`http://${deviceUri}/config/remote_sharing`);
-  if (!response.ok) throw new Error('Failed to fetch remote sharing config');
+  if (!response.ok) throw new Error(`Failed to fetch remote sharing config (${response.status})`);
   const payload: unknown = await response.json();
   return parseRemoteSharingConfig(payload);
 }

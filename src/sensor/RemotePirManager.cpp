@@ -1,12 +1,12 @@
 #include "sensor/RemotePirManager.h"
 
 #include <Arduino.h>
-#include <ctype.h>
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+#include "config/RemoteHostValidation.h"
 #include "system/Logger.h"
 
 namespace {
@@ -24,10 +24,6 @@ struct RemotePirEvent {
 
 bool hasElapsed(uint32_t now, uint32_t deadline) {
     return static_cast<int32_t>(now - deadline) >= 0;
-}
-
-bool isRemoteHostChar(char c) {
-    return isalnum(static_cast<unsigned char>(c)) || c == '-' || c == '.' || c == '_';
 }
 
 bool copyRemoteHostToken(const char* value, char* out, size_t outSize) {
@@ -231,7 +227,6 @@ void RemotePirManager::sendLocalPirEvents(uint32_t now, PirStates localPhysicalP
         const bool active = (localPhysicalPirStates & pirBit) != 0;
         const bool wasActive = (m_previousLocalPirStates & pirBit) != 0;
         auto& sendState = m_localSendStates[pirIndex];
-        sendState.active = active;
 
         if (active != wasActive) {
             queueLocalPirTransition(pirIndex, active, now);

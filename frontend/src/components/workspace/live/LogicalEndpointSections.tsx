@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import LedEndpointControl from '../../live/LedEndpointControl';
 import { type LedEndpoint, type LogicalGroup } from '../../../logical/types';
 import { type DeviceSnapshot, type LedConfig, type LedConfigUpdate } from '../../../types';
+import { buildEndpointsByLabel, buildGroupedLabelSet, normalizeLabel } from '../shared/labelUtils';
 
 interface LogicalEndpointSectionsProps {
   endpoints: LedEndpoint[];
@@ -16,10 +17,6 @@ interface LogicalEndpointSectionsProps {
   onDraftChange: (endpointId: string, patch: LedConfigUpdate) => void;
   onApply: (endpointId: string) => void;
   onReset: (endpointId: string) => void;
-}
-
-function normalizeLabel(label: string): string {
-  return label.trim();
 }
 
 function EndpointGrid({
@@ -95,17 +92,7 @@ export default function LogicalEndpointSections({
   onReset,
 }: LogicalEndpointSectionsProps) {
   const endpointsByLabel = useMemo(() => {
-    const grouped = new Map<string, LedEndpoint[]>();
-    for (const endpoint of endpoints) {
-      const label = normalizeLabel(endpoint.label);
-      if (!label) {
-        continue;
-      }
-      const current = grouped.get(label) ?? [];
-      current.push(endpoint);
-      grouped.set(label, current);
-    }
-    return grouped;
+    return buildEndpointsByLabel(endpoints);
   }, [endpoints]);
 
   const groupedSections = useMemo(() => {
@@ -125,16 +112,7 @@ export default function LogicalEndpointSections({
   }, [endpointsByLabel, groups]);
 
   const groupedLabelSet = useMemo(() => {
-    const labels = new Set<string>();
-    for (const group of groups) {
-      for (const label of group.labels) {
-        const normalized = normalizeLabel(label);
-        if (normalized) {
-          labels.add(normalized);
-        }
-      }
-    }
-    return labels;
+    return buildGroupedLabelSet(groups);
   }, [groups]);
 
   const ungroupedLabels = useMemo(() => {

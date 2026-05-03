@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include "config/ConfigServer.h"
+#include "config/RemoteHostValidation.h"
 #include "config/ConfigStore.h"
 #include "config/WireProtocol.h"
 #include "debug.h"
@@ -72,10 +73,6 @@ bool parseIndexArg(ESP8266WebServer& server, size_t maxSize, size_t& out) {
     if (index < 0 || static_cast<size_t>(index) >= maxSize) return false;
     out = static_cast<size_t>(index);
     return true;
-}
-
-bool isRemoteHostChar(char c) {
-    return isalnum(static_cast<unsigned char>(c)) || c == '-' || c == '.' || c == '_';
 }
 
 bool copyRemoteHost(const String& value, char* out, size_t outSize) {

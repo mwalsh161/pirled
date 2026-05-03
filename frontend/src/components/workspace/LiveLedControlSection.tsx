@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import DeviceHealthStrip from './live/DeviceHealthStrip';
 import LogicalEndpointSections from './live/LogicalEndpointSections';
+import { buildEndpointsByLabel, buildGroupedLabelSet } from './shared/labelUtils';
+import { formatRemotePirLabel } from './shared/remotePirLabel';
 import { getRemoteSharingConfig } from '../../api';
 import { useLiveLedTransport } from '../../live/useLiveLedTransport';
 import { toDeviceUri, type LedEndpoint, type LogicalGroup } from '../../logical/types';
@@ -19,35 +21,13 @@ interface LiveLedControlSectionProps {
   onRetryAddress: (deviceName: string) => void;
 }
 
-function normalizeLabel(label: string): string {
-  return label.trim();
-}
-
 function buildVisibleDeviceUris(
   endpoints: LedEndpoint[],
   groups: LogicalGroup[],
   collapsedGroupIds: ReadonlySet<string>
 ): string[] {
-  const endpointsByLabel = new Map<string, LedEndpoint[]>();
-  for (const endpoint of endpoints) {
-    const label = normalizeLabel(endpoint.label);
-    if (!label) {
-      continue;
-    }
-    const current = endpointsByLabel.get(label) ?? [];
-    current.push(endpoint);
-    endpointsByLabel.set(label, current);
-  }
-
-  const groupedLabelSet = new Set<string>();
-  for (const group of groups) {
-    for (const label of group.labels) {
-      const normalized = normalizeLabel(label);
-      if (normalized) {
-        groupedLabelSet.add(normalized);
-      }
-    }
-  }
+  const endpointsByLabel = buildEndpointsByLabel(endpoints);
+  const groupedLabelSet = buildGroupedLabelSet(groups);
 
   const visibleDeviceUris = new Set<string>();
   for (const group of groups) {
@@ -55,7 +35,7 @@ function buildVisibleDeviceUris(
       continue;
     }
     for (const label of group.labels) {
-      const normalized = normalizeLabel(label);
+      const normalized = label.trim();
       if (!normalized) {
         continue;
       }
@@ -75,22 +55,6 @@ function buildVisibleDeviceUris(
   }
 
   return Array.from(visibleDeviceUris).sort();
-}
-
-function formatRemotePirLabel(
-  sourceHost: string,
-  sourcePirIndex: number,
-  devicesByName: Record<string, ResolvedDevice>,
-  pirLabelsByDeviceUri: Record<string, string[]>
-): string {
-  const sourceDevice = devicesByName[sourceHost];
-  const sourceDeviceName =
-    sourceDevice && sourceDevice.alias.trim().length > 0 ? sourceDevice.alias : sourceDevice?.name ?? sourceHost;
-  const sourceDeviceUri = sourceDevice ? toDeviceUri(sourceDevice) : null;
-  const sourcePirLabel =
-    (sourceDeviceUri ? pirLabelsByDeviceUri[sourceDeviceUri]?.[sourcePirIndex] : undefined) ??
-    `PIR ${sourcePirIndex}`;
-  return `${sourceDeviceName} / ${sourcePirLabel}`;
 }
 
 export default function LiveLedControlSection({
@@ -188,7 +152,8 @@ export default function LiveLedControlSection({
             remotePir.sourceHost,
             remotePir.sourcePirIndex,
             resolvedDevicesByName,
-            pirLabelsByDeviceUri
+            pirLabelsByDeviceUri,
+            `PIR ${remotePir.sourcePirIndex}`
           );
         });
       }

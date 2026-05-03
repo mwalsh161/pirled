@@ -43,7 +43,6 @@ class RemotePirManager {
         uint32_t lastRefreshAt = 0;
         uint32_t nextRepeatAt = 0;
         uint8_t pendingRepeats = 0;
-        bool active = false;
         bool pendingActive = false;
         bool hasSentActive = false;
     };

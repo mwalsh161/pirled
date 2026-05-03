@@ -13,6 +13,7 @@ import {
   type RemoteSharingConfig,
   type ResolvedDevice,
 } from '../../types';
+import { deviceDisplayName, formatRemotePirLabel } from './shared/remotePirLabel';
 
 interface RemoteSensorSharingSectionProps {
   devices: ResolvedDevice[];
@@ -58,6 +59,10 @@ function toErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'Unknown remote sharing error';
 }
 
+function isRemoteSharingUnsupportedError(error: unknown): boolean {
+  return error instanceof Error && error.message.includes('Failed to fetch remote sharing config (404)');
+}
+
 function statusClass(tone: SectionStatus['tone']): string {
   if (tone === 'success') {
     return 'border-emerald-200 bg-emerald-50 text-emerald-800';
@@ -85,27 +90,6 @@ function asPirIndex(value: string, fallback: number): number {
     return fallback;
   }
   return Math.max(0, Math.min(PHYSICAL_PIR_COUNT - 1, Math.trunc(parsed)));
-}
-
-function deviceDisplayName(device: ResolvedDevice): string {
-  return device.alias.trim().length > 0 ? device.alias : device.name;
-}
-
-function formatRemotePirLabel(
-  remotePir: RemotePirConfig,
-  devicesByName: Record<string, ResolvedDevice>,
-  pirLabelsByDeviceUri: Record<string, string[]>
-): string {
-  if (remotePir.sourceHost.trim().length === 0) {
-    return 'Unassigned';
-  }
-  const sourceDevice = devicesByName[remotePir.sourceHost];
-  const sourceName = sourceDevice ? deviceDisplayName(sourceDevice) : remotePir.sourceHost;
-  const sourceDeviceUri = sourceDevice ? toDeviceUri(sourceDevice) : null;
-  const sourcePirLabel =
-    (sourceDeviceUri ? pirLabelsByDeviceUri[sourceDeviceUri]?.[remotePir.sourcePirIndex] : undefined) ??
-    `PIR ${remotePir.sourcePirIndex}`;
-  return `${sourceName} / ${sourcePirLabel}`;
 }
 
 function collectDesiredDestinationHostsForSource(
@@ -174,6 +158,8 @@ export default function RemoteSensorSharingSection({
 }: RemoteSensorSharingSectionProps) {
   const [activeDeviceUri, setActiveDeviceUri] = useState<string>('');
   const [configsByDeviceUri, setConfigsByDeviceUri] = useState<RemoteSharingConfigByDeviceUri>({});
+  const [unsupportedDeviceUris, setUnsupportedDeviceUris] = useState<string[]>([]);
+  const [failedDeviceUris, setFailedDeviceUris] = useState<string[]>([]);
   const [draftRemotePirs, setDraftRemotePirs] = useState<RemotePirConfig[] | null>(null);
   const [status, setStatus] = useState<SectionStatus>({
     tone: 'idle',
@@ -193,6 +179,8 @@ export default function RemoteSensorSharingSection({
       }),
     [devices]
   );
+  const unsupportedDeviceUriSet = useMemo(() => new Set(unsupportedDeviceUris), [unsupportedDeviceUris]);
+  const failedDeviceUriSet = useMemo(() => new Set(failedDeviceUris), [failedDeviceUris]);
   const activeDevice = deviceOptions.find((option) => option.deviceUri === activeDeviceUri)?.device ?? null;
   const devicesByName = useMemo(() => {
     const next: Record<string, ResolvedDevice> = {};
@@ -220,24 +208,66 @@ export default function RemoteSensorSharingSection({
   const loadAllRemoteSharingConfigs = useCallback(async () => {
     if (deviceOptions.length === 0) {
       setConfigsByDeviceUri({});
+      setUnsupportedDeviceUris([]);
+      setFailedDeviceUris([]);
       setDraftRemotePirs(null);
       setStatus({ tone: 'idle', message: 'No resolved devices available.' });
       return;
     }
 
     setStatus({ tone: 'working', message: 'Loading remote sharing for all resolved devices...' });
+    const results = await Promise.all(
+      deviceOptions.map(async ({ deviceUri }) => {
+        try {
+          return { deviceUri, config: await getRemoteSharingConfig(deviceUri) } as const;
+        } catch (error) {
+          return { deviceUri, error } as const;
+        }
+      })
+    );
+
     try {
-      const entries = await Promise.all(
-        deviceOptions.map(async ({ deviceUri }) => [deviceUri, await getRemoteSharingConfig(deviceUri)] as const)
-      );
       const next: RemoteSharingConfigByDeviceUri = {};
-      for (const [deviceUri, config] of entries) {
-        next[deviceUri] = config;
+      const unsupported: string[] = [];
+      const failed: string[] = [];
+
+      for (const result of results) {
+        if ('config' in result) {
+          next[result.deviceUri] = result.config;
+          continue;
+        }
+
+        if (isRemoteSharingUnsupportedError(result.error)) {
+          unsupported.push(result.deviceUri);
+          continue;
+        }
+
+        failed.push(result.deviceUri);
       }
+
       setConfigsByDeviceUri(next);
-      setStatus({ tone: 'success', message: 'Remote sharing loaded.' });
+      setUnsupportedDeviceUris(unsupported);
+      setFailedDeviceUris(failed);
+      if (Object.keys(next).length === 0 && unsupported.length === 0 && failed.length > 0) {
+        throw new Error('Failed to fetch remote sharing config');
+      }
+      if (failed.length > 0) {
+        setStatus({
+          tone: 'success',
+          message: `Remote sharing loaded for ${Object.keys(next).length} device${Object.keys(next).length === 1 ? '' : 's'}. ${failed.length} device${failed.length === 1 ? '' : 's'} failed to load.`,
+        });
+      } else if (unsupported.length > 0) {
+        setStatus({
+          tone: 'success',
+          message: `Remote sharing loaded. ${unsupported.length} device${unsupported.length === 1 ? '' : 's'} still use older firmware without this endpoint.`,
+        });
+      } else {
+        setStatus({ tone: 'success', message: 'Remote sharing loaded.' });
+      }
     } catch (error) {
       setConfigsByDeviceUri({});
+      setUnsupportedDeviceUris([]);
+      setFailedDeviceUris([]);
       setDraftRemotePirs(null);
       setStatus({ tone: 'error', message: toErrorMessage(error) });
     }
@@ -248,13 +278,26 @@ export default function RemoteSensorSharingSection({
       setActiveDeviceUri('');
       return;
     }
-    if (!activeDeviceUri || !deviceOptions.some((option) => option.deviceUri === activeDeviceUri)) {
+
+    const supportedDeviceUriSet = new Set(Object.keys(configsByDeviceUri));
+    const hasActiveDevice = deviceOptions.some((option) => option.deviceUri === activeDeviceUri);
+    if (hasActiveDevice) {
+      return;
+    }
+
+    const firstSupportedDevice = deviceOptions.find((option) => supportedDeviceUriSet.has(option.deviceUri));
+    if (firstSupportedDevice) {
+      setActiveDeviceUri(firstSupportedDevice.deviceUri);
+      return;
+    }
+
+    if (!hasActiveDevice) {
       const firstDevice = deviceOptions[0];
       if (firstDevice) {
         setActiveDeviceUri(firstDevice.deviceUri);
       }
     }
-  }, [activeDeviceUri, deviceOptions]);
+  }, [activeDeviceUri, configsByDeviceUri, deviceOptions]);
 
   useEffect(() => {
     void loadAllRemoteSharingConfigs();
@@ -286,9 +329,8 @@ export default function RemoteSensorSharingSection({
   const syncDerivedDestinations = useCallback(
     async (
       startingConfigsByDeviceUri: RemoteSharingConfigByDeviceUri
-    ): Promise<{ configsByDeviceUri: RemoteSharingConfigByDeviceUri; dirtyDeviceUris: string[] }> => {
+    ): Promise<RemoteSharingConfigByDeviceUri> => {
       const nextConfigsByDeviceUri: RemoteSharingConfigByDeviceUri = { ...startingConfigsByDeviceUri };
-      const dirtyDeviceUris: string[] = [];
 
       for (const device of devices) {
         const sourceDeviceUri = toDeviceUri(device);
@@ -317,13 +359,10 @@ export default function RemoteSensorSharingSection({
 
           latestConfig = await setPirEventDestinationConfig(sourceDeviceUri, index, desiredDestination);
           nextConfigsByDeviceUri[sourceDeviceUri] = cloneRemoteSharingConfig(latestConfig);
-          if (!dirtyDeviceUris.includes(sourceDeviceUri)) {
-            dirtyDeviceUris.push(sourceDeviceUri);
-          }
         }
       }
 
-      return { configsByDeviceUri: nextConfigsByDeviceUri, dirtyDeviceUris };
+      return nextConfigsByDeviceUri;
     },
     [devices, devicesByUri]
   );
@@ -342,10 +381,10 @@ export default function RemoteSensorSharingSection({
         ...configsByDeviceUri,
         [activeDeviceUri]: cloneRemoteSharingConfig(updatedActiveConfig),
       };
-      const synced = await syncDerivedDestinations(nextConfigsByDeviceUri);
+      const syncedConfigsByDeviceUri = await syncDerivedDestinations(nextConfigsByDeviceUri);
 
-      setConfigsByDeviceUri(synced.configsByDeviceUri);
-      const syncedActiveConfig = synced.configsByDeviceUri[activeDeviceUri];
+      setConfigsByDeviceUri(syncedConfigsByDeviceUri);
+      const syncedActiveConfig = syncedConfigsByDeviceUri[activeDeviceUri];
       if (!syncedActiveConfig) {
         throw new Error('Active device config disappeared during remote sharing sync.');
       }
@@ -417,6 +456,8 @@ export default function RemoteSensorSharingSection({
             {deviceOptions.map((option) => (
               <option key={option.deviceUri} value={option.deviceUri}>
                 {option.displayName}
+                {unsupportedDeviceUriSet.has(option.deviceUri) ? ' (unsupported firmware)' : ''}
+                {failedDeviceUriSet.has(option.deviceUri) ? ' (failed to load)' : ''}
               </option>
             ))}
           </select>
@@ -451,7 +492,13 @@ export default function RemoteSensorSharingSection({
 
       {!activeConfig || !draftRemotePirs ? (
         <div className="rounded border border-slate-200 bg-slate-50 px-3 py-4 text-sm text-slate-600">
-          Choose a resolved device to edit remote inputs.
+          {activeDeviceUri && unsupportedDeviceUriSet.has(activeDeviceUri)
+            ? 'The selected device is on older firmware and does not expose remote sharing yet.'
+            : activeDeviceUri && failedDeviceUriSet.has(activeDeviceUri)
+              ? 'Remote sharing failed to load for the selected device.'
+            : Object.keys(configsByDeviceUri).length === 0
+              ? 'No resolved devices currently support remote sharing.'
+              : 'Choose a resolved device to edit remote inputs.'}
         </div>
       ) : (
         <div className="grid gap-4 xl:grid-cols-2">
@@ -467,7 +514,13 @@ export default function RemoteSensorSharingSection({
                 const isInvalid = remotePir.enabled && remotePir.sourceHost.trim().length === 0;
                 const selectedSourceDevice = devicesByName[remotePir.sourceHost];
                 const selectedSourceDeviceUri = selectedSourceDevice ? toDeviceUri(selectedSourceDevice) : null;
-                const remoteInputLabel = formatRemotePirLabel(remotePir, devicesByName, pirLabelsByDeviceUri);
+                const remoteInputLabel = formatRemotePirLabel(
+                  remotePir.sourceHost,
+                  remotePir.sourcePirIndex,
+                  devicesByName,
+                  pirLabelsByDeviceUri,
+                  `PIR ${remotePir.sourcePirIndex}`
+                );
                 return (
                   <div key={`remote:${index}`} className="rounded border border-slate-200 bg-slate-50 p-2">
                     <div className="mb-2 flex items-center justify-between gap-2">
