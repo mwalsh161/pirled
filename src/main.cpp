@@ -1,5 +1,6 @@
 #include "board/BoardPins.h"
 
+#include <Arduino.h>
 #include <cstring>
 
 #include "board/RuntimeState.h"
@@ -29,7 +30,7 @@ void reseedWiFiCredentials() {
     char ssid[33] = "";
     char password[65] = "";
     if (!readStoredWiFiCredentials(ssid, sizeof(ssid), password, sizeof(password))) {
-        log("dr,4");  // reseed read failed
+        logAt(millis(), "dr,4");  // reseed read failed
         return;
     }
 
@@ -37,7 +38,7 @@ void reseedWiFiCredentials() {
     WiFi.persistent(true);
     WiFi.begin(ssid, password);
     WiFi.persistent(false);
-    log("dr,5");  // reseed attempted
+    logAt(millis(), "dr,5");  // reseed attempted
 }
 
 void wipeWiFiCredentials() {
@@ -45,7 +46,7 @@ void wipeWiFiCredentials() {
     WiFi.persistent(true);
     bool ok = WiFi.disconnect(true, true);  // disable STA + erase stored credentials
     WiFi.persistent(false);
-    log(ok ? "dr,6" : "dr,7");  // 6=wipe ok, 7=wipe failed
+    logAt(millis(), ok ? "dr,6" : "dr,7");  // 6=wipe ok, 7=wipe failed
 }
 }  // namespace
 

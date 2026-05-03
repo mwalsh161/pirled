@@ -73,7 +73,6 @@ bool initConfig() {
     EEPROM.begin(sizeof(Config));
     EEPROM.get(0, s_config);
 
-    uint32_t storedMagic = s_config.magic;
     uint16_t storedVersion = s_config.version;
     uint32_t storedCrc = s_config.crc;
     uint32_t computedCrc = computeCrc(s_config);
@@ -91,7 +90,7 @@ bool initConfig() {
         if (magicValid && migrateStoredConfig(storedVersion, s_config)) {
             char migrationStatus[16] = "";
             snprintf(migrationStatus, sizeof(migrationStatus), "cm,%u,%u", storedVersion, CONFIG_VERSION);
-            log(migrationStatus);
+            logAt(millis(), migrationStatus);
             D_PRINTLN(migrationStatus);
             D_PRINTLN("Stored config migrated");
             bootSource = CFG_BOOT_SOURCE_MIGRATED;
@@ -106,13 +105,19 @@ bool initConfig() {
         }
     }
 
-    // cb,<boot_source>,<valid>,<magic_ok>,<version_ok>,<crc_ok>,<stored_magic>,<stored_version>,<stored_crc>,<computed_crc>
-    char status[128] = "";
-    snprintf(status, sizeof(status), "cb,%u,%u,%u,%u,%u,%lu,%u,%lu,%lu", bootSource, valid, magicValid,
-             versionValid, crcValid, static_cast<unsigned long>(storedMagic), storedVersion,
+    // cb,<boot_source>,<valid>,<magic_ok>,<version_ok>,<crc_ok>,<stored_version>
+    char bootStatus[24] = "";
+    snprintf(bootStatus, sizeof(bootStatus), "cb,%u,%u,%u,%u,%u,%u", bootSource, valid,
+             magicValid, versionValid, crcValid, storedVersion);
+    logAt(millis(), bootStatus);
+    D_PRINTLN(bootStatus);
+
+    // cc,<stored_crc_hex>,<computed_crc_hex>
+    char crcStatus[24] = "";
+    snprintf(crcStatus, sizeof(crcStatus), "cc,%08lX,%08lX",
              static_cast<unsigned long>(storedCrc), static_cast<unsigned long>(computedCrc));
-    log(status);
-    D_PRINTLN(status);
+    logAt(millis(), crcStatus);
+    D_PRINTLN(crcStatus);
 
     return recoveredStoredConfig;
 }
@@ -125,7 +130,7 @@ bool saveConfig() {
     char saveStatus[8] = "";
     if (memcmp(&stored, &s_config, sizeof(Config)) == 0) {
         snprintf(saveStatus, sizeof(saveStatus), "cs,%u", CFG_SAVE_NO_CHANGE);
-        log(saveStatus);
+        logAt(millis(), saveStatus);
         D_PRINTLN(saveStatus);
         return true;
     }
@@ -133,12 +138,12 @@ bool saveConfig() {
     EEPROM.put(0, s_config);
     if (!EEPROM.commit()) {
         snprintf(saveStatus, sizeof(saveStatus), "cs,%u", CFG_SAVE_COMMIT_FAILED);
-        log(saveStatus);
+        logAt(millis(), saveStatus);
         D_PRINTLN(saveStatus);
         return false;
     }
     snprintf(saveStatus, sizeof(saveStatus), "cs,%u", CFG_SAVE_COMMITTED);
-    log(saveStatus);
+    logAt(millis(), saveStatus);
     D_PRINTLN(saveStatus);
     return true;
 }

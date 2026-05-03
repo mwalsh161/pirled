@@ -1,27 +1,18 @@
 #pragma once
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <stddef.h>
+#include <stdint.h>
 
-#include <type_traits>
+constexpr size_t LOG_ENTRY_COUNT = 128;
+constexpr size_t LOG_MESSAGE_SIZE = 28;
 
-extern char logBuf[4096];
-extern size_t logPos;  // next write position
-extern bool logWrapped;
+struct LogEntry {
+    uint32_t timestampMs;
+    char message[LOG_MESSAGE_SIZE];
+};
 
-// No delim
-void logPartial(const char* msg);
+extern LogEntry logEntries[LOG_ENTRY_COUNT];
+extern size_t logWriteIndex;
+extern size_t logEntryCount;
 
-// Assumes delim ","
-template <typename T, typename = typename std::enable_if<std::is_integral<T>::value>::type>
-void logPartial(const T value) {
-    char buf[16] = "";
-    int n = snprintf(buf, sizeof(buf), "%d,", value);
-    if (n < 0 || static_cast<size_t>(n) >= sizeof(buf))
-        logPartial("ERR,");
-    else
-        logPartial(buf);
-}
-
-void log(const char* msg);
+void logAt(uint32_t timestampMs, const char* msg);

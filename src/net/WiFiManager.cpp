@@ -182,7 +182,7 @@ bool WiFiManager::attemptColdRetry() {
 
     if (!m_autoReseedAttempted && m_coldRetryAttempts >= AUTO_RESEED_AFTER_COLD_RETRIES) {
         m_autoReseedAttempted = true;
-        log("wa,1");  // auto-reseed trigger
+        logAt(millis(), "wa,1");  // auto-reseed trigger
         D_PRINTLN("WiFi: Auto-reseed trigger");
         attemptAutoReseed();
     }
@@ -193,7 +193,7 @@ bool WiFiManager::attemptColdRetry() {
 bool WiFiManager::attemptAutoReseed() {
     station_config conf;
     if (!wifi_station_get_config(&conf)) {
-        log("wa,2");  // auto-reseed read failed
+        logAt(millis(), "wa,2");  // auto-reseed read failed
         return false;
     }
 
@@ -201,7 +201,7 @@ bool WiFiManager::attemptAutoReseed() {
     size_t password_len = strnlen((char*)conf.password, sizeof(conf.password));
     if (ssid_len == 0 || ssid_len == sizeof(conf.ssid) || password_len == 0 ||
         password_len == sizeof(conf.password)) {
-        log("wa,3");  // auto-reseed invalid creds
+        logAt(millis(), "wa,3");  // auto-reseed invalid creds
         return false;
     }
 
@@ -216,7 +216,7 @@ bool WiFiManager::attemptAutoReseed() {
     WiFi.persistent(true);
     WiFi.begin(ssid, password);
     WiFi.persistent(false);
-    log("wa,4");  // auto-reseed attempted (no reboot)
+    logAt(millis(), "wa,4");  // auto-reseed attempted (no reboot)
     return true;
 }
 

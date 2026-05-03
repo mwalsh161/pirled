@@ -27,7 +27,7 @@ void writeResetTapState(uint32_t tapCount) {
     ResetTapState state{.magic = RESET_TAP_MAGIC, .tapCount = tapCount};
     if (!ESP.rtcUserMemoryWrite(RESET_TAP_RTC_SLOT, reinterpret_cast<uint32_t*>(&state),
                                 sizeof(state))) {
-        log("dr,8");  // rtc write failed
+        logAt(millis(), "dr,8");  // rtc write failed
     }
 }
 
@@ -81,7 +81,7 @@ uint32_t readResetTapCountForBoot() {
 
     char tapLog[16] = "";
     snprintf(tapLog, sizeof(tapLog), "dr,%lu", static_cast<unsigned long>(currentTapCount));
-    log(tapLog);
+    logAt(s_resetTapStartedAtMs, tapLog);
     return currentTapCount;
 }
 

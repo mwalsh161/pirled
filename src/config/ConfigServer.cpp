@@ -17,12 +17,8 @@
 #error "FIRMWARE_VERSION not set. Define via PlatformIO build (see scripts/set_firmware_version.py)"
 #endif
 
-// Stringify macros to convert FIRMWARE_VERSION define to string literal
-#define STRINGIFY(x) #x
-#define STRINGIFY_EXPANSION(x) STRINGIFY(x)
-
 namespace {
-const char FIRMWARE_VERSION_STR[] PROGMEM = STRINGIFY_EXPANSION(FIRMWARE_VERSION);
+const char FIRMWARE_VERSION_STR[] PROGMEM = FIRMWARE_VERSION;
 }  // namespace
 
 BearSSL::PublicKey signPubKey(publicKey);
@@ -366,11 +362,13 @@ ConfigServer::ConfigServer() : m_server(80) {
         m_server.setContentLength(CONTENT_LENGTH_UNKNOWN);
         addCors(m_server);
         m_server.send(200, "text/plain", "");
-        if (logWrapped) {
-            m_server.sendContent(logBuf + logPos, sizeof(logBuf) - logPos);
-            m_server.sendContent(logBuf, logPos);
-        } else {
-            m_server.sendContent(logBuf, logPos);
+        const size_t startIndex = logEntryCount == LOG_ENTRY_COUNT ? logWriteIndex : 0;
+        for (size_t i = 0; i < logEntryCount; i++) {
+            const LogEntry& entry = logEntries[(startIndex + i) % LOG_ENTRY_COUNT];
+            char line[48];
+            snprintf(line, sizeof(line), "%lu,%s\n", static_cast<unsigned long>(entry.timestampMs),
+                     entry.message);
+            m_server.sendContent(line);
         }
     });
     m_server.on("/logs", HTTP_OPTIONS, handleOptions);
@@ -398,7 +396,7 @@ void ConfigServer::onWiFiConnected(const char* hostname) {
         D_PRINTLN("ConfigServer lazy init from onWiFiConnected; explicit setup was not called");
         setup();
     }
-    log(">WiFi");
+    logAt(millis(), ">WiFi");
     D_PRINTLN("starting ConfigServer, MDNS, OTA");
     m_server.begin();
     MDNS.begin(hostname);
@@ -408,7 +406,7 @@ void ConfigServer::onWiFiConnected(const char* hostname) {
 }
 
 void ConfigServer::onWiFiDisconnected() {
-    log("<WiFi");
+    logAt(millis(), "<WiFi");
     D_PRINTLN("stopping ConfigServer, MDNS, OTA");
     m_server.close();
     MDNS.close();

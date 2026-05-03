@@ -1,25 +1,22 @@
 #include "system/Logger.h"
 
-char logBuf[4096] = "";
-size_t logPos = 0;
-bool logWrapped = false;
+#include <string.h>
 
-// No delim
-void logPartial(const char* msg) {
-    while (*msg) {
-        logBuf[logPos++] = *msg++;
-        if (logPos >= sizeof(logBuf)) {
-            logPos = 0;
-            logWrapped = true;
-        }
-    }
-}
+LogEntry logEntries[LOG_ENTRY_COUNT] = {};
+size_t logWriteIndex = 0;
+size_t logEntryCount = 0;
 
-void log(const char* msg) {
-    logPartial(msg);
-    logBuf[logPos++] = '\n';
-    if (logPos >= sizeof(logBuf)) {
-        logPos = 0;
-        logWrapped = true;
+void logAt(uint32_t timestampMs, const char* msg) {
+    LogEntry& entry = logEntries[logWriteIndex];
+    entry.timestampMs = timestampMs;
+
+    if (msg) {
+        strncpy(entry.message, msg, sizeof(entry.message) - 1);
+        entry.message[sizeof(entry.message) - 1] = '\0';
+    } else {
+        entry.message[0] = '\0';
     }
+
+    logWriteIndex = (logWriteIndex + 1) % LOG_ENTRY_COUNT;
+    if (logEntryCount < LOG_ENTRY_COUNT) logEntryCount++;
 }

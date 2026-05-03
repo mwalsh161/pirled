@@ -1,5 +1,6 @@
 #include "sensor/RemotePirManager.h"
 
+#include <Arduino.h>
 #include <ctype.h>
 #include <errno.h>
 #include <stdio.h>
@@ -78,16 +79,16 @@ uint32_t effectiveLeaseMs(const RemotePirConfig& slotConfig, const RemotePirEven
     return slotConfig.leaseMs;
 }
 
-void logRemotePirCode(uint8_t code) {
+void logRemotePirCode(uint32_t now, uint8_t code) {
     char message[8] = "";
     snprintf(message, sizeof(message), "rp,%u", code);
-    log(message);
+    logAt(now, message);
 }
 
 void logRemotePirSendCode(uint8_t code) {
     char message[8] = "";
     snprintf(message, sizeof(message), "rs,%u", code);
-    log(message);
+    logAt(millis(), message);
 }
 }  // namespace
 
@@ -108,11 +109,11 @@ void RemotePirManager::onWiFiConnected(const char* hostname) {
 
     if (m_udp.begin(REMOTE_PIR_DEFAULT_PORT) == 1) {
         m_udpListening = true;
-        log("ru,1");
+        logAt(millis(), "ru,1");
         return;
     }
 
-    log("ru,2");
+    logAt(millis(), "ru,2");
 }
 
 void RemotePirManager::onWiFiDisconnected() {
@@ -126,7 +127,7 @@ void RemotePirManager::onWiFiDisconnected() {
         sendState.hasSentActive = false;
     }
     clearAllRemotePirSlots();
-    log("ru,3");
+    logAt(millis(), "ru,3");
 }
 
 void RemotePirManager::setRemotePirSlot(size_t slot, bool active, uint32_t now, uint32_t leaseMs) {
@@ -179,14 +180,14 @@ void RemotePirManager::receivePackets(uint32_t now) {
 
         const int readSize = m_udp.read(packet, sizeof(packet) - 1);
         if (readSize <= 0 || packetSize >= int(sizeof(packet))) {
-            logRemotePirCode(1);  // malformed
+            logRemotePirCode(now, 1);  // malformed
             continue;
         }
         packet[readSize] = '\0';
 
         RemotePirEvent event;
         if (!parseRemotePirEvent(packet, event)) {
-            logRemotePirCode(1);  // malformed
+            logRemotePirCode(now, 1);  // malformed
             continue;
         }
 
@@ -217,7 +218,7 @@ void RemotePirManager::receivePackets(uint32_t now) {
         }
 
         if (!matched) {
-            logRemotePirCode(2);  // no configured slot matched
+            logRemotePirCode(now, 2);  // no configured slot matched
         }
     }
 }
