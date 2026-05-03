@@ -558,10 +558,9 @@ bool readConfigV6(ConfigV6& config) {
     EEPROM.get(0, config);
     return hasValidHeaderAndCrc(config, CONFIG_VERSION_V6);
 }
-}  // namespace
 
-bool migrateStoredConfig(uint16_t storedVersion, Config& targetConfig) {
-    switch (storedVersion) {
+bool migrateStoredConfigFromVersion(uint16_t version, Config& targetConfig) {
+    switch (version) {
         case CONFIG_VERSION_V1: {
             ConfigV1 configV1;
             if (!readConfigV1(configV1)) return false;
@@ -609,4 +608,19 @@ bool migrateStoredConfig(uint16_t storedVersion, Config& targetConfig) {
         default:
             return false;
     }
+}
+}  // namespace
+
+bool migrateStoredConfig(uint16_t storedVersion, Config& targetConfig) {
+    uint16_t candidateVersion = min(storedVersion, CONFIG_VERSION_V6);
+    while (candidateVersion >= CONFIG_VERSION_V1) {
+        if (migrateStoredConfigFromVersion(candidateVersion, targetConfig)) {
+            return true;
+        }
+        if (candidateVersion == CONFIG_VERSION_V1) {
+            break;
+        }
+        candidateVersion--;
+    }
+    return false;
 }
