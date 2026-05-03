@@ -14,6 +14,7 @@ interface LiveLedControlSectionProps {
   endpoints: LedEndpoint[];
   groups: LogicalGroup[];
   pirLabelsByDeviceUri: Record<string, string[]>;
+  firmwareVersionByDeviceUri: Record<string, string>;
 }
 
 function normalizeLabel(label: string): string {
@@ -80,6 +81,7 @@ export default function LiveLedControlSection({
   endpoints,
   groups,
   pirLabelsByDeviceUri,
+  firmwareVersionByDeviceUri,
 }: LiveLedControlSectionProps) {
   const [isAutoRefreshEnabled, setIsAutoRefreshEnabled] = useState(true);
   const [collapsedGroupIds, setCollapsedGroupIds] = useState<string[]>([]);
@@ -259,6 +261,7 @@ export default function LiveLedControlSection({
             knownDevices={knownDevices}
             resolvedDevicesByName={resolvedDevicesByName}
             deviceHealthByUri={deviceHealthByUri}
+            firmwareVersionByDeviceUri={firmwareVersionByDeviceUri}
             persistingByDeviceUri={persistingByDeviceUri}
             pausedByDeviceUri={pausedByDeviceUri}
             onPersistDevice={(device) => {

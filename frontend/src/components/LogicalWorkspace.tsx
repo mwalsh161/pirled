@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLogicalWorkspace } from '../logical/useLogicalWorkspace';
 import { toDeviceUri } from '../logical/types';
 import { PHYSICAL_PIR_COUNT } from '../types';
+import { useDeviceFirmwareVersions } from '../live/useDeviceFirmwareVersions';
 import { useDeviceSnapshotPolling } from '../live/useDeviceSnapshotPolling';
 import GroupsSection from './workspace/GroupsSection';
 import LabelMatrixSection from './workspace/LabelMatrixSection';
@@ -119,6 +120,7 @@ export default function LogicalWorkspace() {
     }`;
 
   const activeEndpoints = endpoints.filter((endpoint) => endpoint.label.trim().length > 0);
+  const firmwareVersionByDeviceUri = useDeviceFirmwareVersions(resolvedDevices);
   const resolvedDevicesByName = useMemo(() => {
     const next: Record<string, (typeof resolvedDevices)[number]> = {};
     for (const device of resolvedDevices) {
@@ -205,6 +207,7 @@ export default function LogicalWorkspace() {
             resolvedDevicesByName={resolvedDevicesByName}
             snapshotsByDeviceUri={setupSnapshotsByDeviceUri}
             deviceHealthByUri={setupDeviceHealthByUri}
+            firmwareVersionByDeviceUri={firmwareVersionByDeviceUri}
             hasCompletedLabelSetup={hasCompletedLabelSetup}
             onSetActiveDeviceUri={setSetupActiveDeviceUri}
             onRetryDevice={(deviceName) => {
@@ -231,6 +234,7 @@ export default function LogicalWorkspace() {
           endpoints={liveEndpoints}
           groups={groups}
           pirLabelsByDeviceUri={pirLabelsByDeviceUri}
+          firmwareVersionByDeviceUri={firmwareVersionByDeviceUri}
         />
       ) : null}
 

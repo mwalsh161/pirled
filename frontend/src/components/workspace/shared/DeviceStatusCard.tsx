@@ -6,6 +6,7 @@ interface DeviceStatusCardProps {
   deviceDisplayName: string;
   tone: DeviceStatusTone;
   metaText: string;
+  versionText?: string;
   detailText?: string;
   errorText?: string;
   actions?: ReactNode;
@@ -61,6 +62,7 @@ export default function DeviceStatusCard({
   deviceDisplayName,
   tone,
   metaText,
+  versionText,
   detailText,
   errorText,
   actions,
@@ -100,6 +102,11 @@ export default function DeviceStatusCard({
         </div>
       )}
       <div className="mt-0.5 text-[11px] opacity-80">{metaText}</div>
+      {versionText ? (
+        <div className="mt-0.5 max-w-64 truncate text-[11px] opacity-80" title={versionText}>
+          fw {versionText}
+        </div>
+      ) : null}
       {detailText ? <div className="mt-1 text-[11px] font-semibold">{detailText}</div> : null}
       {actions ? (
         <div

@@ -524,6 +524,16 @@ export async function getRemoteSharingConfig(deviceUri: string): Promise<RemoteS
   return parseRemoteSharingConfig(payload);
 }
 
+export async function getFirmwareVersion(deviceUri: string): Promise<string> {
+  const response = await fetch(`http://${deviceUri}/firmware_version`);
+  if (!response.ok) throw new Error('Failed to fetch firmware version');
+  const payload: unknown = await response.json();
+  if (!isRecord(payload) || !isString(payload.version) || payload.version.trim().length === 0) {
+    throw new Error('Invalid firmware version payload');
+  }
+  return payload.version;
+}
+
 export async function setPirEventDestinationConfig(
   deviceUri: string,
   index: number,

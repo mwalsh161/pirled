@@ -18,6 +18,7 @@ interface LabelMatrixSectionProps {
   resolvedDevicesByName: Record<string, ResolvedDevice>;
   snapshotsByDeviceUri: Record<string, DeviceSnapshot>;
   deviceHealthByUri: Record<string, DeviceLiveHealth>;
+  firmwareVersionByDeviceUri: Record<string, string>;
   hasCompletedLabelSetup: boolean;
   onSetActiveDeviceUri: (deviceUri: string | null) => void;
   onRetryDevice: (deviceName: string) => void;
@@ -88,6 +89,7 @@ export default function LabelMatrixSection({
   resolvedDevicesByName,
   snapshotsByDeviceUri,
   deviceHealthByUri,
+  firmwareVersionByDeviceUri,
   hasCompletedLabelSetup,
   onSetActiveDeviceUri,
   onRetryDevice,
@@ -190,6 +192,8 @@ export default function LabelMatrixSection({
             const hasUnsavedLabels = dirtyLabelDevices[device.name] ?? false;
             const resolved = resolvedDevicesByName[device.name];
             const deviceUri = resolved ? toDeviceUri(resolved) : null;
+            const deviceUrl = deviceUri ? `http://${deviceUri}` : null;
+            const deviceLogsUrl = deviceUrl ? `${deviceUrl}/logs` : null;
             const snapshot = deviceUri ? snapshotsByDeviceUri[deviceUri] : undefined;
             const health = deviceUri ? deviceHealthByUri[deviceUri] : undefined;
             const tone: DisplayTone = !resolved ? 'unresolved' : health?.tone ?? 'idle';
@@ -207,6 +211,9 @@ export default function LabelMatrixSection({
                   deviceDisplayName={deviceDisplayName}
                   tone={tone as DeviceStatusTone}
                   metaText={`${toneText(tone)} | LED on ${ledOnCount(rows, snapshot)}/${rows.length} | PIR active ${activePirCount(snapshot?.pirState)}/${PHYSICAL_PIR_COUNT}`}
+                  {...(deviceUri && firmwareVersionByDeviceUri[deviceUri]
+                    ? { versionText: firmwareVersionByDeviceUri[deviceUri] }
+                    : {})}
                   {...(health?.lastError ? { errorText: health.lastError } : {})}
                   onHeaderClick={() => {
                     setOpenDeviceName((previous) => (previous === device.name ? null : device.name));
@@ -223,6 +230,16 @@ export default function LabelMatrixSection({
                         >
                           Retry
                         </button>
+                      ) : null}
+                      {deviceLogsUrl ? (
+                        <a
+                          href={deviceLogsUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="rounded border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                        >
+                          Logs
+                        </a>
                       ) : null}
                       <button
                         type="button"

@@ -7,6 +7,7 @@ interface DeviceHealthStripProps {
   knownDevices: KnownDevice[];
   resolvedDevicesByName: Record<string, ResolvedDevice>;
   deviceHealthByUri: Record<string, DeviceLiveHealth>;
+  firmwareVersionByDeviceUri: Record<string, string>;
   persistingByDeviceUri: Record<string, boolean>;
   pausedByDeviceUri: Record<string, boolean>;
   onPersistDevice: (device: ResolvedDevice) => void;
@@ -25,6 +26,7 @@ export default function DeviceHealthStrip({
   knownDevices,
   resolvedDevicesByName,
   deviceHealthByUri,
+  firmwareVersionByDeviceUri,
   persistingByDeviceUri,
   pausedByDeviceUri,
   onPersistDevice,
@@ -77,6 +79,7 @@ export default function DeviceHealthStrip({
               deviceDisplayName={deviceDisplayName}
               tone={tone}
               metaText={`${stateText} | q:${queueDepth} | last ${secondsAgo(health?.lastSuccessAt)}`}
+              {...(firmwareVersionByDeviceUri[deviceUri] ? { versionText: firmwareVersionByDeviceUri[deviceUri] } : {})}
               {...(health?.lastError ? { errorText: health.lastError } : {})}
               actions={
                 <>
