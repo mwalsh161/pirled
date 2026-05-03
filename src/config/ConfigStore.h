@@ -25,7 +25,6 @@ struct LedConfig {
 
 struct PirEventDestinationConfig {
     char host[REMOTE_PIR_HOST_SIZE];
-    uint16_t port;
     bool enabled;
 };
 

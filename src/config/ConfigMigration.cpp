@@ -14,6 +14,7 @@ constexpr uint16_t CONFIG_VERSION_V3 = 3;
 constexpr uint16_t CONFIG_VERSION_V4 = 4;
 constexpr uint16_t CONFIG_VERSION_V5 = 5;
 constexpr uint16_t CONFIG_VERSION_V6 = 6;
+constexpr uint16_t CONFIG_VERSION_V7 = 7;
 
 constexpr size_t LED_CONFIG_COUNT_V6 = 4;
 constexpr size_t PIR_EVENT_DESTINATION_COUNT_V6 = 4;
@@ -22,6 +23,12 @@ constexpr size_t REMOTE_PIR_HOST_SIZE_V6 = 32;
 constexpr uint16_t REMOTE_PIR_DEFAULT_PORT_V6 = 4210;
 constexpr uint32_t REMOTE_PIR_DEFAULT_LEASE_MS_V6 = 9000;
 constexpr uint8_t VIRTUAL_PIR_V6 = 4;
+constexpr size_t LED_CONFIG_COUNT_V7 = 4;
+constexpr size_t PIR_EVENT_DESTINATION_COUNT_V7 = 4;
+constexpr size_t REMOTE_PIR_SLOT_COUNT_V7 = 8;
+constexpr size_t REMOTE_PIR_HOST_SIZE_V7 = 32;
+constexpr uint32_t REMOTE_PIR_DEFAULT_LEASE_MS_V7 = 9000;
+constexpr uint8_t VIRTUAL_PIR_V7 = 4;
 
 struct LedConfigV1 {
     int brightness;
@@ -191,6 +198,30 @@ struct ConfigV6 {
     uint32_t crc;
 };
 
+struct PirEventDestinationConfigV7 {
+    char host[REMOTE_PIR_HOST_SIZE_V7];
+    bool enabled;
+};
+
+struct RemotePirConfigV7 {
+    char sourceHost[REMOTE_PIR_HOST_SIZE_V7];
+    uint8_t sourcePirIndex;
+    uint32_t leaseMs;
+    bool enabled;
+};
+
+struct ConfigV7 {
+    uint32_t magic;
+    uint16_t version;
+
+    int64_t timestamp;
+    std::array<LedConfigV5, LED_CONFIG_COUNT_V7> ledConfig;
+    std::array<PirEventDestinationConfigV7, PIR_EVENT_DESTINATION_COUNT_V7> eventDestinations;
+    std::array<RemotePirConfigV7, REMOTE_PIR_SLOT_COUNT_V7> remotePirs;
+
+    uint32_t crc;
+};
+
 template <typename T>
 uint32_t computeLegacyCrc(const T& cfg) {
     return crc32Buffer(reinterpret_cast<const uint8_t*>(&cfg), offsetof(T, crc));
@@ -234,6 +265,35 @@ void setConfigV6Defaults(ConfigV6& config) {
         remotePir.sourceHost[0] = '\0';
         remotePir.sourcePirIndex = 0;
         remotePir.leaseMs = REMOTE_PIR_DEFAULT_LEASE_MS_V6;
+        remotePir.enabled = false;
+    }
+}
+
+void setConfigV7Defaults(ConfigV7& config) {
+    memset(&config, 0, sizeof(config));
+    config.magic = CONFIG_MAGIC;
+    config.version = CONFIG_VERSION_V7;
+
+    for (size_t i = 0; i < config.ledConfig.size(); i++) {
+        uint16_t pirMask = static_cast<uint16_t>((1U << i) | (1U << (i + VIRTUAL_PIR_V7)));
+        config.ledConfig[i] = {.brightness = 1023,
+                               .rampOnMs = 1000,
+                               .holdOnMs = 10000,
+                               .rampOffMs = 1000,
+                               .waitOnMs = 0,
+                               .pirMaskOn = pirMask,
+                               .pirMaskOff = pirMask};
+    }
+
+    for (auto& destination : config.eventDestinations) {
+        destination.host[0] = '\0';
+        destination.enabled = false;
+    }
+
+    for (auto& remotePir : config.remotePirs) {
+        remotePir.sourceHost[0] = '\0';
+        remotePir.sourcePirIndex = 0;
+        remotePir.leaseMs = REMOTE_PIR_DEFAULT_LEASE_MS_V7;
         remotePir.enabled = false;
     }
 }
@@ -369,7 +429,27 @@ void migrateV5ToV6(const ConfigV5& from, ConfigV6& to) {
     to.ledConfig = from.ledConfig;
 }
 
-void copyV6ToCurrent(const ConfigV6& from, Config& to) {
+void migrateV6ToV7(const ConfigV6& from, ConfigV7& to) {
+    setConfigV7Defaults(to);
+    to.timestamp = from.timestamp;
+    to.ledConfig = from.ledConfig;
+
+    for (size_t i = 0; i < from.eventDestinations.size(); i++) {
+        copyFixedString(to.eventDestinations[i].host, sizeof(to.eventDestinations[i].host),
+                        from.eventDestinations[i].host, sizeof(from.eventDestinations[i].host));
+        to.eventDestinations[i].enabled = from.eventDestinations[i].enabled;
+    }
+
+    for (size_t i = 0; i < from.remotePirs.size(); i++) {
+        copyFixedString(to.remotePirs[i].sourceHost, sizeof(to.remotePirs[i].sourceHost),
+                        from.remotePirs[i].sourceHost, sizeof(from.remotePirs[i].sourceHost));
+        to.remotePirs[i].sourcePirIndex = from.remotePirs[i].sourcePirIndex;
+        to.remotePirs[i].leaseMs = from.remotePirs[i].leaseMs;
+        to.remotePirs[i].enabled = from.remotePirs[i].enabled;
+    }
+}
+
+void copyV7ToCurrent(const ConfigV7& from, Config& to) {
     to.magic = from.magic;
     to.version = from.version;
     to.timestamp = from.timestamp;
@@ -387,7 +467,6 @@ void copyV6ToCurrent(const ConfigV6& from, Config& to) {
     for (size_t i = 0; i < from.eventDestinations.size(); i++) {
         copyFixedString(to.eventDestinations[i].host, sizeof(to.eventDestinations[i].host),
                         from.eventDestinations[i].host, sizeof(from.eventDestinations[i].host));
-        to.eventDestinations[i].port = from.eventDestinations[i].port;
         to.eventDestinations[i].enabled = from.eventDestinations[i].enabled;
     }
 
@@ -403,7 +482,15 @@ void copyV6ToCurrent(const ConfigV6& from, Config& to) {
 void migrateV5ChainToCurrent(const ConfigV5& configV5, Config& targetConfig) {
     ConfigV6 configV6;
     migrateV5ToV6(configV5, configV6);
-    copyV6ToCurrent(configV6, targetConfig);
+    ConfigV7 configV7;
+    migrateV6ToV7(configV6, configV7);
+    copyV7ToCurrent(configV7, targetConfig);
+}
+
+void migrateV6ChainToCurrent(const ConfigV6& configV6, Config& targetConfig) {
+    ConfigV7 configV7;
+    migrateV6ToV7(configV6, configV7);
+    copyV7ToCurrent(configV7, targetConfig);
 }
 
 void migrateV4ChainToCurrent(const ConfigV4& configV4, Config& targetConfig) {
@@ -466,6 +553,11 @@ bool readConfigV5(ConfigV5& config) {
     EEPROM.get(0, config);
     return hasValidHeaderAndCrc(config, CONFIG_VERSION_V5);
 }
+
+bool readConfigV6(ConfigV6& config) {
+    EEPROM.get(0, config);
+    return hasValidHeaderAndCrc(config, CONFIG_VERSION_V6);
+}
 }  // namespace
 
 bool migrateStoredConfig(uint16_t storedVersion, Config& targetConfig) {
@@ -505,6 +597,13 @@ bool migrateStoredConfig(uint16_t storedVersion, Config& targetConfig) {
             if (!readConfigV5(configV5)) return false;
 
             migrateV5ChainToCurrent(configV5, targetConfig);
+            return true;
+        }
+        case CONFIG_VERSION_V6: {
+            ConfigV6 configV6;
+            if (!readConfigV6(configV6)) return false;
+
+            migrateV6ChainToCurrent(configV6, targetConfig);
             return true;
         }
         default:

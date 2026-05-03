@@ -45,7 +45,6 @@ export interface LedState {
 
 export interface PirEventDestinationConfig {
   host: string;
-  port: number;
   enabled: boolean;
 }
 

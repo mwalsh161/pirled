@@ -288,7 +288,7 @@ void RemotePirManager::sendLocalPirEvent(size_t pirIndex, bool active, uint32_t 
     for (const auto& destination : destinations) {
         if (!destination.enabled || destination.host[0] == '\0') continue;
 
-        if (m_udp.beginPacket(destination.host, destination.port) != 1) {
+        if (m_udp.beginPacket(destination.host, REMOTE_PIR_DEFAULT_PORT) != 1) {
             logRemotePirSendCode(2);
             continue;
         }

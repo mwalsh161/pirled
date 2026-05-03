@@ -103,8 +103,6 @@ void sendRemoteSharingJson(ESP8266WebServer& server) {
         const auto& destination = config.eventDestinations[i];
         json += "{\"host\":";
         appendRemoteHost(json, destination.host);
-        json += ",\"port\":";
-        json += static_cast<unsigned int>(destination.port);
         json += ",\"enabled\":";
         json += destination.enabled ? "true" : "false";
         json += "}";
@@ -235,15 +233,6 @@ ConfigServer::ConfigServer() : m_server(80) {
             !copyRemoteHost(m_server.arg("host"), next.host, sizeof(next.host))) {
             sendInvalidArg(m_server, "host");
             return;
-        }
-        if (m_server.hasArg("port")) {
-            int32_t value = 0;
-            if (!parseInt32Strict(m_server.arg("port"), value) || value <= 0 ||
-                value > UINT16_MAX) {
-                sendInvalidArg(m_server, "port");
-                return;
-            }
-            next.port = static_cast<uint16_t>(value);
         }
         if (m_server.hasArg("enabled") && !parseBoolStrict(m_server.arg("enabled"), next.enabled)) {
             sendInvalidArg(m_server, "enabled");

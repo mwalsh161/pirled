@@ -13,7 +13,7 @@
 
 namespace {
 constexpr uint32_t CONFIG_MAGIC = 0x5049524C;  // "PIRL"
-constexpr uint16_t CONFIG_VERSION = 6;
+constexpr uint16_t CONFIG_VERSION = 7;
 Config s_config;
 
 constexpr uint8_t CFG_BOOT_SOURCE_STORED = 0;
@@ -46,7 +46,6 @@ void setConfigDefaults() {
 
     for (auto& destination : s_config.eventDestinations) {
         destination.host[0] = '\0';
-        destination.port = REMOTE_PIR_DEFAULT_PORT;
         destination.enabled = false;
     }
 

@@ -210,12 +210,11 @@ function parseDeviceLabelMetadata(payload: unknown): DeviceLabelMetadata {
 }
 
 function parsePirEventDestinationConfig(value: unknown): PirEventDestinationConfig | null {
-  if (!isRecord(value) || !isString(value.host) || !isNumber(value.port) || !isBoolean(value.enabled)) {
+  if (!isRecord(value) || !isString(value.host) || !isBoolean(value.enabled)) {
     return null;
   }
   return {
     host: value.host,
-    port: Math.trunc(value.port),
     enabled: value.enabled,
   };
 }

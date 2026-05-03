@@ -32,7 +32,7 @@ function cloneRemoteSharingConfig(config: RemoteSharingConfig): RemoteSharingCon
 }
 
 function isDestinationEqual(left: PirEventDestinationConfig, right: PirEventDestinationConfig): boolean {
-  return left.host === right.host && left.port === right.port && left.enabled === right.enabled;
+  return left.host === right.host && left.enabled === right.enabled;
 }
 
 function isRemotePirEqual(left: RemotePirConfig, right: RemotePirConfig): boolean {
@@ -312,7 +312,7 @@ export default function RemoteSensorSharingSection({ devices }: RemoteSensorShar
                         Enabled
                       </label>
                     </div>
-                    <div className="grid gap-2 sm:grid-cols-[1fr_7rem_auto]">
+                    <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
                       <input
                         type="text"
                         list="remote-sharing-hosts"
@@ -320,16 +320,6 @@ export default function RemoteSensorSharingSection({ devices }: RemoteSensorShar
                         placeholder="pirled-7BF498"
                         onChange={(event) => {
                           updateDestinationDraft(index, { host: event.target.value.trim() });
-                        }}
-                        className="rounded border border-gray-300 px-2 py-1 text-sm"
-                      />
-                      <input
-                        type="number"
-                        min={1}
-                        max={65535}
-                        value={destination.port}
-                        onChange={(event) => {
-                          updateDestinationDraft(index, { port: asPositiveInt(event.target.value, destination.port) });
                         }}
                         className="rounded border border-gray-300 px-2 py-1 text-sm"
                       />
