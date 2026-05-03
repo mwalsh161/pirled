@@ -7,11 +7,7 @@
 #include "debug.h"
 
 namespace {
-constexpr unsigned long WARM_RETRY_INTERVAL_MS = 8000;
-constexpr unsigned long COLD_RETRY_INITIAL_BACKOFF_MS = 10000;
-constexpr unsigned long COLD_RETRY_MAX_BACKOFF_MS = 300000;  // 5 minutes
-constexpr int WARM_RETRY_COUNT = 3;
-constexpr float BACKOFF_JITTER_RATIO = 0.1;  // 10% jitter
+constexpr unsigned long RECONNECT_INTERVAL_MS = 10000;
 }  // namespace
 
 void WiFiManager::setup(const char* prefix) {
@@ -34,7 +30,8 @@ void WiFiManager::setup(const char* prefix) {
         m_state = WIFI_DISABLED;
         return;
     }
-    m_state = WIFI_COLD_RETRY;
+    m_state = WIFI_IDLE;
+    m_lastRetryTime = millis() - RECONNECT_INTERVAL_MS;
 }
 
 bool WiFiManager::subscribe(ConnectedCB cb, DisconnectedCB disCB) {
@@ -59,9 +56,6 @@ bool WiFiManager::update(unsigned long now) {
             if (m_state != WIFI_CONNECTED) {
                 // Transitioned to connected
                 m_state = WIFI_CONNECTED;
-                m_warmRetryCount = 0;
-                m_coldRetryBackoff = COLD_RETRY_INITIAL_BACKOFF_MS;
-                m_coldRetryAttempts = 0;
                 notifyConnected(ip);
             }
             return true;
@@ -80,68 +74,16 @@ bool WiFiManager::update(unsigned long now) {
 
     // Disconnected - handle state machine
     if (m_state == WIFI_CONNECTED) {
-        // Lost connection after being connected
-        D_PRINTLN("WiFi: Lost connection, starting warm retries");
-        m_state = WIFI_IDLE;  // Reset to idle to restart from warm retries
+        D_PRINTLN("WiFi: Lost connection, returning to idle");
+        m_state = WIFI_IDLE;
         notifyDisconnected();
     }
 
-    switch (m_state) {
-        case WIFI_DISABLED:
-            break;
-
-        case WIFI_IDLE:
-            // Not yet started or lost connection, move to warm retry
-            D_PRINTLN("WiFi: Starting warm retries");
-            m_state = WIFI_WARM_RETRY;
-            m_warmRetryCount = 0;
+    if (m_state == WIFI_IDLE && now - m_lastRetryTime >= RECONNECT_INTERVAL_MS) {
+        D_PRINTLN("WiFi: Attempting reconnect");
+        if (beginWithStoredCredentials()) {
             m_lastRetryTime = now;
-            break;
-
-        case WIFI_WARM_RETRY:
-            if (now - m_lastRetryTime >= WARM_RETRY_INTERVAL_MS) {
-                D_PRINTF("WiFi: Warm retry attempt %d\n", m_warmRetryCount + 1);
-                WiFi.begin();  // Warm retry with cached config
-                m_warmRetryCount++;
-                m_lastRetryTime = now;
-
-                if (m_warmRetryCount >= WARM_RETRY_COUNT) {
-                    D_PRINTLN("WiFi: Warm retries exhausted, moving to cold retry");
-                    m_state = WIFI_COLD_RETRY;
-                }
-            }
-            break;
-
-        case WIFI_COLD_RETRY:
-            D_PRINTLN("WiFi: Attempting cold retry");
-            if (!attemptColdRetry()) {
-                break;
-            }
-            m_state = WIFI_BACKOFF;
-            m_lastRetryTime = now;
-            break;
-
-        case WIFI_BACKOFF:
-            if (now - m_lastRetryTime >= m_coldRetryBackoff) {
-                D_PRINTF(
-                    "WiFi: Backoff complete, attempting cold retry (next backoff: %lu "
-                    "ms)\n",
-                    m_coldRetryBackoff);
-                if (!attemptColdRetry()) {
-                    break;
-                }
-
-                // Update backoff for next time (exponential with ceiling and jitter)
-                unsigned long newBackoff = min(m_coldRetryBackoff * 2, COLD_RETRY_MAX_BACKOFF_MS);
-                m_coldRetryBackoff = applyJitter(newBackoff);
-
-                m_lastRetryTime = now;
-            }
-            break;
-
-        case WIFI_CONNECTED:
-            // Shouldn't reach here (handled at top), but just in case
-            break;
+        }
     }
     return false;
 }
@@ -156,18 +98,10 @@ bool WiFiManager::beginWithStoredCredentials() {
     D_PRINTF("Calling WiFi.begin(\"%s\", \"%c**%c\")\n", ssid, password[0],
              password[password_len - 1]);
 #endif
-    WiFi.disconnect(true, false);  // Cold retry: restart STA without erasing stored credentials.
-    delay(200);
     WiFi.mode(WIFI_STA);
     WiFi.setHostname(m_hostname);
     WiFi.begin(ssid, password);
     return true;
-}
-
-bool WiFiManager::attemptColdRetry() {
-    m_coldRetryAttempts++;
-    D_PRINTF("WiFi: Cold retry attempt %u\n", m_coldRetryAttempts);
-    return beginWithStoredCredentials();
 }
 
 void WiFiManager::notifyConnected(IPAddress ip) {
@@ -182,16 +116,6 @@ void WiFiManager::notifyDisconnected() {
     for (int i = 0; i < m_listenerCount; i++) {
         m_disconnectedListeners[i]();
     }
-}
-
-unsigned long WiFiManager::applyJitter(unsigned long baseValue) {
-    // Apply jitter: baseValue +/- (baseValue * BACKOFF_JITTER_RATIO)
-    unsigned long jitterRange = (unsigned long)(baseValue * BACKOFF_JITTER_RATIO);
-    // Random value between -jitterRange and +jitterRange
-    long jitterAmount = (random(2 * jitterRange + 1)) - jitterRange;
-    long result = (long)baseValue + jitterAmount;
-    // Ensure result is positive
-    return max(1UL, (unsigned long)result);
 }
 
 bool WiFiManager::isLinkLocal(IPAddress ip) {
