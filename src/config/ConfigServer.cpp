@@ -9,6 +9,7 @@
 #include "config/ConfigServer.h"
 #include "config/RemoteHostValidation.h"
 #include "config/ConfigStore.h"
+#include "config/HttpResponse.h"
 #include "config/WireProtocol.h"
 #include "debug.h"
 #include "ota_public_key.h"
@@ -26,12 +27,6 @@ const char FIRMWARE_VERSION_STR[] PROGMEM = FIRMWARE_VERSION;
 BearSSL::PublicKey signPubKey(publicKey);
 BearSSL::HashSHA256 hash;
 BearSSL::SigningVerifier sign(&signPubKey);
-
-void addCors(ESP8266WebServer& server) {
-    server.sendHeader("Access-Control-Allow-Origin", "*");
-    server.sendHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-    server.sendHeader("Access-Control-Allow-Headers", "Content-Type");
-};
 
 namespace {
 constexpr PirStates PIR_OVERRIDE_MASK = 0x00FF;
@@ -120,8 +115,7 @@ void sendRemoteSharingJson(ESP8266WebServer& server) {
         json += "}";
     }
     json += "]}";
-    addCors(server);
-    server.send(200, "application/json", json);
+    sendJsonResponse(server, 200, json);
 }
 
 void appendBoolField(String& json, const char* name, bool value) {
@@ -193,33 +187,28 @@ void sendBootHistoryJson(ESP8266WebServer& server) {
     }
     json += "]}";
 
-    addCors(server);
-    server.send(200, "application/json", json);
+    sendJsonResponse(server, 200, json);
 }
 
 void sendInvalidArg(ESP8266WebServer& server, const char* name) {
-    addCors(server);
-    server.send(400, "text/html", String("Invalid parameter: ") + name);
+    sendTextResponse(server, 400, "text/html", String("Invalid parameter: ") + name);
 }
 }  // namespace
 
 ConfigServer::ConfigServer() : m_server(80) {
     // Handle preflight OPTIONS requests
     auto handleOptions = [&]() {
-        addCors(m_server);
-        m_server.send(204);  // No Content
+        sendEmptyResponse(m_server, 204);
     };
 
     m_server.on("/config/led", HTTP_POST, [&]() {
-        addCors(m_server);
-
         int32_t index = 0;
         if (!m_server.hasArg("index") || !parseInt32Strict(m_server.arg("index"), index)) {
             sendInvalidArg(m_server, "index");
             return;
         }
         if (index < 0 || static_cast<size_t>(index) >= getConfig().ledConfig.size()) {
-            m_server.send(400, "text/html", "Invalid LED index");
+            sendTextResponse(m_server, 400, "text/html", "Invalid LED index");
             return;
         }
         size_t i = static_cast<size_t>(index);
@@ -294,8 +283,6 @@ ConfigServer::ConfigServer() : m_server(80) {
     // We currently accept last-write-wins behavior rather than adding
     // optimistic concurrency or multi-slot atomicity on the device.
     m_server.on("/config/pir_destination", HTTP_POST, [&]() {
-        addCors(m_server);
-
         size_t i = 0;
         if (!parseIndexArg(m_server, getConfig().eventDestinations.size(), i)) {
             sendInvalidArg(m_server, "index");
@@ -323,8 +310,6 @@ ConfigServer::ConfigServer() : m_server(80) {
     m_server.on("/config/pir_destination", HTTP_OPTIONS, handleOptions);
 
     m_server.on("/config/remote_pir", HTTP_POST, [&]() {
-        addCors(m_server);
-
         size_t i = 0;
         if (!parseIndexArg(m_server, getConfig().remotePirs.size(), i)) {
             sendInvalidArg(m_server, "index");
@@ -376,21 +361,19 @@ ConfigServer::ConfigServer() : m_server(80) {
             return;
         }
         setConfigTimestamp(timestamp);
-        addCors(m_server);
         if (!saveConfig()) {
-            m_server.send(500, "text/plain", "Save failed");
+            sendTextResponse(m_server, 500, "text/plain", "Save failed");
             return;
         }
-        m_server.send(200);
+        sendEmptyResponse(m_server, 200);
     });
     m_server.on("/config/save", HTTP_OPTIONS, handleOptions);
 
     m_server.on("/pir_override", HTTP_POST, [&]() {
         // This gets ORed with what pins read.
         // In general, best practice is to only set bits 4..7 for the virtual PIRs.
-        addCors(m_server);
         if (!m_server.hasArg("val")) {
-            m_server.send(400, "text/html", "Missing val parameter");
+            sendTextResponse(m_server, 400, "text/html", "Missing val parameter");
             return;
         }
         int32_t overrideMask = 0;
@@ -403,28 +386,19 @@ ConfigServer::ConfigServer() : m_server(80) {
     });
     m_server.on("/pir_override", HTTP_OPTIONS, handleOptions);
 
-    m_server.on("/combined.schema", HTTP_GET, [&]() {
-        addCors(m_server);
-        sendWireSchema(m_server);
-    });
+    m_server.on("/combined.schema", HTTP_GET, [&]() { sendWireSchema(m_server); });
     m_server.on("/combined.schema", HTTP_OPTIONS, handleOptions);
-    m_server.on("/combined.bin", HTTP_GET, [&]() {
-        addCors(m_server);
-        sendWireData(m_server);
-    });
+    m_server.on("/combined.bin", HTTP_GET, [&]() { sendWireData(m_server); });
     m_server.on("/combined.bin", HTTP_OPTIONS, handleOptions);
 
     m_server.on("/reboot", HTTP_POST, [&]() {
-        addCors(m_server);
-        m_server.send(200);
+        sendEmptyResponse(m_server, 200);
         ESP.restart();
     });
     m_server.on("/reboot", HTTP_OPTIONS, handleOptions);
 
     m_server.on("/logs", HTTP_GET, [&]() {
-        m_server.setContentLength(CONTENT_LENGTH_UNKNOWN);
-        addCors(m_server);
-        m_server.send(200, "text/plain", "");
+        beginStreamingTextResponse(m_server, 200, "text/plain");
         const size_t startIndex = logEntryCount == LOG_ENTRY_COUNT ? logWriteIndex : 0;
         for (size_t i = 0; i < logEntryCount; i++) {
             const LogEntry& entry = logEntries[(startIndex + i) % LOG_ENTRY_COUNT];
@@ -440,9 +414,8 @@ ConfigServer::ConfigServer() : m_server(80) {
     m_server.on("/boot_history", HTTP_OPTIONS, handleOptions);
 
     m_server.on("/firmware_version", HTTP_GET, [&]() {
-        addCors(m_server);
         String version = String((__FlashStringHelper*)FIRMWARE_VERSION_STR);
-        m_server.send(200, "application/json", "{\"version\":\"" + version + "\"}");
+        sendJsonResponse(m_server, 200, "{\"version\":\"" + version + "\"}");
     });
     m_server.on("/firmware_version", HTTP_OPTIONS, handleOptions);
 }

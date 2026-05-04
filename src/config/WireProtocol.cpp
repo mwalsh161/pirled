@@ -4,6 +4,7 @@
 
 #include "board/RuntimeState.h"
 #include "config/ConfigStore.h"
+#include "config/HttpResponse.h"
 
 namespace {
 template <typename T>
@@ -35,8 +36,7 @@ constexpr char WIRE_SCHEMA_JSON[] PROGMEM = R"json(
 void sendWireData(ESP8266WebServer& server) {
     const Config& config = getConfig();
 
-    server.setContentLength(PAYLOAD_SIZE);
-    server.send(200, "application/octet-stream");
+    beginFixedBinaryResponse(server, 200, "application/octet-stream", PAYLOAD_SIZE);
 
     server.sendContent(charPtr(config.timestamp), sizeof(config.timestamp));
     static_assert(sizeof(config.timestamp) == 8);
@@ -71,5 +71,5 @@ void sendWireData(ESP8266WebServer& server) {
     }
 }
 void sendWireSchema(ESP8266WebServer& server) {
-    server.send_P(200, "application/json", WIRE_SCHEMA_JSON);
+    sendJsonProgmemResponse(server, 200, WIRE_SCHEMA_JSON);
 }
