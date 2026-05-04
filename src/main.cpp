@@ -11,6 +11,10 @@
 #include "debug.h"
 
 namespace {
+// Set when a firmware change needs setup-portal input before normal networking.
+// This is intentionally tied only to network state, not versioned app config.
+constexpr bool FIRMWARE_REQUIRES_STATIC_NETWORK_SETUP = true;
+
 bool s_warningBlinkOn = false;
 unsigned long s_warningBlinkLastToggle = 0;
 
@@ -41,6 +45,14 @@ void updateWarningBlink() {
     for (auto& ledController : LEDS) {
         analogWrite(ledController.led().pin(), s_warningBlinkOn ? 1023 : 0);
     }
+}
+
+bool shouldRunFirmwareRequestedPortal(uint32_t resetTapCount, bool wifiCredentialsPresent,
+                                      bool staticNetworkPresent) {
+    if (!FIRMWARE_REQUIRES_STATIC_NETWORK_SETUP) return false;
+    if (resetTapCount != 0) return false;
+    if (!wifiCredentialsPresent) return false;
+    return !staticNetworkPresent;
 }
 }  // namespace
 
@@ -77,12 +89,22 @@ void setup() {
         resetTapCount = finalizeResetTapCountAfterWindow();
     }
     setBootHistoryTapCountFinal(resetTapCount);
-    setBootHistoryWiFiCredentialsPresent(hasStoredWiFiCredentials());
+    bool wifiCredentialsPresent = hasStoredWiFiCredentials();
+    setBootHistoryWiFiCredentialsPresent(wifiCredentialsPresent);
     StaticNetworkConfig staticNetworkConfig{};
-    setBootHistoryStaticNetworkPresent(
-        loadStaticNetworkConfig(staticNetworkConfig) && staticNetworkConfig.enabled);
+    bool staticNetworkPresent =
+        loadStaticNetworkConfig(staticNetworkConfig) && staticNetworkConfig.enabled;
+    setBootHistoryStaticNetworkPresent(staticNetworkPresent);
+    bool firmwarePortalRequested =
+        shouldRunFirmwareRequestedPortal(resetTapCount, wifiCredentialsPresent, staticNetworkPresent);
+    setBootHistoryFirmwarePortalRequested(firmwarePortalRequested);
     D_PRINTF("Tap final: %lu\n", static_cast<unsigned long>(resetTapCount));
-    if (resetTapCount == RESET_TAP_PORTAL) {
+    if (firmwarePortalRequested) {
+        D_PRINTLN("FIRMWARE_PORTAL_REQUESTED");
+        runPortalBlocking();
+        D_PRINTLN("Not reachable");
+        ESP.restart();  // Not reachable.
+    } else if (resetTapCount == RESET_TAP_PORTAL) {
         D_PRINTLN("RESET_TAP_PORTAL");
         runPortalBlocking();
         D_PRINTLN("Not reachable");

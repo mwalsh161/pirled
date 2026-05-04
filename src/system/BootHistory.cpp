@@ -140,6 +140,13 @@ void setBootHistoryStaticNetworkPresent(bool present) {
     commitCurrentRecordIfChanged(previousRecord);
 }
 
+void setBootHistoryFirmwarePortalRequested(bool requested) {
+    if (!s_currentRecordValid) return;
+    BootHistoryRecord previousRecord = s_currentRecord;
+    setFlag(BOOT_FLAG_FIRMWARE_PORTAL_REQUESTED, requested);
+    commitCurrentRecordIfChanged(previousRecord);
+}
+
 void markBootHistoryWiFiWipe(bool success) {
     if (!s_currentRecordValid) return;
     BootHistoryRecord previousRecord = s_currentRecord;

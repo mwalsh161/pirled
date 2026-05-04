@@ -186,6 +186,9 @@ void sendBootHistoryJson(ESP8266WebServer& server) {
         json += ",";
         appendBoolField(json, "staticNetworkPresent",
                         (record.flags & BOOT_FLAG_STATIC_NETWORK_PRESENT) != 0);
+        json += ",";
+        appendBoolField(json, "firmwarePortalRequested",
+                        (record.flags & BOOT_FLAG_FIRMWARE_PORTAL_REQUESTED) != 0);
         json += "}}";
     }
     json += "]}";

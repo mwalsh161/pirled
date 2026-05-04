@@ -32,6 +32,7 @@ enum BootHistoryFlags : uint16_t {
     // Bits 9-12 were previously auto-reseed flags. Leave them unused so older
     // boot-history records do not get mislabeled after the static-IP transition.
     BOOT_FLAG_STATIC_NETWORK_PRESENT = 1U << 13,
+    BOOT_FLAG_FIRMWARE_PORTAL_REQUESTED = 1U << 14,
 };
 
 void initBootHistory(uint32_t resetReason, uint32_t tapCountCandidate);
@@ -42,6 +43,7 @@ void setBootHistoryConfigLoad(uint8_t bootSource, bool magicValid, bool versionV
                               bool migrationSucceeded, bool migrationSaveSucceeded);
 void setBootHistoryWiFiCredentialsPresent(bool present);
 void setBootHistoryStaticNetworkPresent(bool present);
+void setBootHistoryFirmwarePortalRequested(bool requested);
 void markBootHistoryWiFiWipe(bool success);
 
 size_t readBootHistoryRecords(BootHistoryRecord* records, size_t maxRecords);
