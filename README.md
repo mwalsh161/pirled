@@ -29,3 +29,16 @@ Stretch TODO:
     - what is AP range?
     - would need a "house" key to validate connecting. No security + no SSL...big yikes
     - ...maybe not.
+
+## PlatformIO cache setup
+
+This project uses a repo-local PlatformIO core directory at `.platformio-core/` so VS Code builds and CLI builds can share the same cache and incremental build context.
+
+If you already have PlatformIO packages installed globally in `~/.platformio`, you can optionally symlink these into `.platformio-core/` to avoid re-downloading toolchains and frameworks:
+
+```sh
+ln -s ~/.platformio/packages .platformio-core/packages
+ln -s ~/.platformio/platforms .platformio-core/platforms
+```
+
+This is optional. If the symlinks are absent, PlatformIO can manage `.platformio-core/` directly.
