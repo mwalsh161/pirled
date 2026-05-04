@@ -92,6 +92,26 @@ function asPirIndex(value: string, fallback: number): number {
   return Math.max(0, Math.min(PHYSICAL_PIR_COUNT - 1, Math.trunc(parsed)));
 }
 
+function toMdnsHost(deviceName: string): string {
+  const trimmed = deviceName.trim();
+  if (trimmed.length === 0) {
+    return '';
+  }
+  return trimmed.toLowerCase().endsWith('.local') ? trimmed : `${trimmed}.local`;
+}
+
+function logicalDeviceNameFromDestinationHost(host: string): string {
+  const trimmed = host.trim();
+  if (trimmed.toLowerCase().endsWith('.local')) {
+    return trimmed.slice(0, -'.local'.length);
+  }
+  return trimmed;
+}
+
+function destinationHostIdentity(host: string): string {
+  return logicalDeviceNameFromDestinationHost(host).toLowerCase();
+}
+
 function collectDesiredDestinationHostsForSource(
   sourceDeviceName: string,
   devicesByUri: Record<string, ResolvedDevice>,
@@ -108,7 +128,7 @@ function collectDesiredDestinationHostsForSource(
         continue;
       }
       if (remotePir.sourceHost === sourceDeviceName) {
-        targets.add(targetDevice.name);
+        targets.add(toMdnsHost(targetDevice.name));
       }
     }
   }
@@ -126,19 +146,23 @@ function buildManagedDestinations(
     );
   }
 
-  const desiredSet = new Set(desiredHosts);
+  const desiredIdentitySet = new Set(desiredHosts.map((host) => destinationHostIdentity(host)));
   const orderedHosts: string[] = [];
   for (const destination of current) {
     if (!destination.enabled || destination.host.trim().length === 0) {
       continue;
     }
-    if (!desiredSet.has(destination.host) || orderedHosts.includes(destination.host)) {
+    const destinationIdentity = destinationHostIdentity(destination.host);
+    if (!desiredIdentitySet.has(destinationIdentity)) {
       continue;
     }
-    orderedHosts.push(destination.host);
+    if (orderedHosts.some((host) => destinationHostIdentity(host) === destinationIdentity)) {
+      continue;
+    }
+    orderedHosts.push(toMdnsHost(logicalDeviceNameFromDestinationHost(destination.host)));
   }
   for (const host of desiredHosts) {
-    if (!orderedHosts.includes(host)) {
+    if (!orderedHosts.some((existingHost) => destinationHostIdentity(existingHost) === destinationHostIdentity(host))) {
       orderedHosts.push(host);
     }
   }
@@ -611,7 +635,7 @@ export default function RemoteSensorSharingSection({
             </div>
             <div className="space-y-2">
               {derivedOutgoingDestinations.map((destination, index) => {
-                const targetDevice = devicesByName[destination.host];
+                const targetDevice = devicesByName[logicalDeviceNameFromDestinationHost(destination.host)];
                 const targetName = targetDevice ? deviceDisplayName(targetDevice) : destination.host;
                 return (
                   <div key={`derived-destination:${index}`} className="rounded border border-slate-200 bg-slate-50 p-2">

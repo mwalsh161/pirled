@@ -81,9 +81,33 @@ void logRemotePirCode(uint32_t now, uint8_t code) {
     logAt(now, message);
 }
 
+void logRemotePirMismatch(uint32_t now, uint8_t code, uint8_t pir, bool sawHostMatch,
+                          bool sawPirMatch, bool sawEnabledSlot) {
+    char message[20] = "";
+    snprintf(message, sizeof(message), "rp,%u,p%u,h%u,i%u,e%u", code,
+             static_cast<unsigned int>(pir), sawHostMatch ? 1U : 0U, sawPirMatch ? 1U : 0U,
+             sawEnabledSlot ? 1U : 0U);
+    logAt(now, message);
+}
+
+void logRemotePirMatched(uint32_t now, size_t slot, uint8_t pir, bool active) {
+    char message[18] = "";
+    snprintf(message, sizeof(message), "rp,6,s%u,p%u,a%u", static_cast<unsigned int>(slot),
+             static_cast<unsigned int>(pir), active ? 1U : 0U);
+    logAt(now, message);
+}
+
 void logRemotePirSendCode(uint8_t code) {
     char message[8] = "";
     snprintf(message, sizeof(message), "rs,%u", code);
+    logAt(millis(), message);
+}
+
+void logRemotePirSendDetail(uint8_t code, size_t pirIndex, bool active, size_t destinationIndex) {
+    char message[18] = "";
+    snprintf(message, sizeof(message), "rs,%u,p%u,a%u,d%u", code,
+             static_cast<unsigned int>(pirIndex), active ? 1U : 0U,
+             static_cast<unsigned int>(destinationIndex));
     logAt(millis(), message);
 }
 }  // namespace
@@ -188,10 +212,20 @@ void RemotePirManager::receivePackets(uint32_t now) {
         }
 
         bool matched = false;
+        bool sawEnabledSlot = false;
+        bool sawHostMatch = false;
+        bool sawPirMatch = false;
         const auto& remotePirs = getConfig().remotePirs;
         for (size_t slot = 0; slot < remotePirs.size(); slot++) {
             const auto& slotConfig = remotePirs[slot];
             if (!slotConfig.enabled) continue;
+            sawEnabledSlot = true;
+            if (strcmp(slotConfig.sourceHost, event.source) == 0) {
+                sawHostMatch = true;
+            }
+            if (slotConfig.sourcePirIndex == event.pir) {
+                sawPirMatch = true;
+            }
             if (slotConfig.sourcePirIndex != event.pir) continue;
             if (strcmp(slotConfig.sourceHost, event.source) != 0) continue;
 
@@ -211,10 +245,19 @@ void RemotePirManager::receivePackets(uint32_t now) {
             memcpy(slotState.latestSource, event.source, sizeof(slotState.latestSource));
             slotState.hasLatestSeq = true;
             setRemotePirSlot(slot, event.active, now, leaseMs);
+            logRemotePirMatched(now, slot, event.pir, event.active);
         }
 
         if (!matched) {
-            logRemotePirCode(now, 2);  // no configured slot matched
+            uint8_t code = 2;  // no configured slot matched
+            if (sawHostMatch && !sawPirMatch) {
+                code = 3;  // host matched, PIR index did not
+            } else if (!sawHostMatch && sawPirMatch) {
+                code = 4;  // PIR index matched, host did not
+            } else if (sawHostMatch && sawPirMatch) {
+                code = 5;  // matching host and PIR seen, but not in same enabled slot
+            }
+            logRemotePirMismatch(now, code, event.pir, sawHostMatch, sawPirMatch, sawEnabledSlot);
         }
     }
 }
@@ -280,16 +323,19 @@ void RemotePirManager::sendLocalPirEvent(size_t pirIndex, bool active, uint32_t 
     }
 
     const auto& destinations = getConfig().eventDestinations;
-    for (const auto& destination : destinations) {
+    for (size_t destinationIndex = 0; destinationIndex < destinations.size(); destinationIndex++) {
+        const auto& destination = destinations[destinationIndex];
         if (!destination.enabled || destination.host[0] == '\0') continue;
 
         if (m_udp.beginPacket(destination.host, REMOTE_PIR_DEFAULT_PORT) != 1) {
-            logRemotePirSendCode(2);
+            logRemotePirSendDetail(2, pirIndex, active, destinationIndex);
             continue;
         }
         m_udp.write(reinterpret_cast<const uint8_t*>(packet), static_cast<size_t>(length));
         if (m_udp.endPacket() != 1) {
-            logRemotePirSendCode(3);
+            logRemotePirSendDetail(3, pirIndex, active, destinationIndex);
+            continue;
         }
+        logRemotePirSendDetail(4, pirIndex, active, destinationIndex);
     }
 }
