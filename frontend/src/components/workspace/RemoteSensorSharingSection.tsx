@@ -26,6 +26,10 @@ interface SectionStatus {
 }
 
 type RemoteSharingConfigByDeviceUri = Record<string, RemoteSharingConfig>;
+type DriftedDeviceSummary = {
+  deviceUri: string;
+  displayName: string;
+};
 
 function cloneRemotePirConfig(remotePir: RemotePirConfig): RemotePirConfig {
   return { ...remotePir };
@@ -176,6 +180,40 @@ function buildManagedDestinations(
   });
 }
 
+function findDriftedDevices(
+  devices: ResolvedDevice[],
+  devicesByUri: Record<string, ResolvedDevice>,
+  configsByDeviceUri: RemoteSharingConfigByDeviceUri
+): DriftedDeviceSummary[] {
+  const drifted: DriftedDeviceSummary[] = [];
+  for (const device of devices) {
+    const deviceUri = toDeviceUri(device);
+    const currentConfig = configsByDeviceUri[deviceUri];
+    if (!currentConfig) {
+      continue;
+    }
+
+    const desiredHosts = collectDesiredDestinationHostsForSource(device.name, devicesByUri, configsByDeviceUri);
+    const desiredDestinations = buildManagedDestinations(
+      currentConfig.eventDestinations,
+      desiredHosts,
+      deviceDisplayName(device)
+    );
+
+    const hasDrift = desiredDestinations.some((destination, index) => {
+      const currentDestination = currentConfig.eventDestinations[index];
+      return !currentDestination || !isDestinationEqual(currentDestination, destination);
+    });
+    if (hasDrift) {
+      drifted.push({
+        deviceUri,
+        displayName: deviceDisplayName(device),
+      });
+    }
+  }
+  return drifted;
+}
+
 export default function RemoteSensorSharingSection({
   devices,
   pirLabelsByDeviceUri,
@@ -190,6 +228,7 @@ export default function RemoteSensorSharingSection({
     message: 'Remote sharing ready.',
   });
   const [savingKey, setSavingKey] = useState<string | null>(null);
+  const [driftedDevices, setDriftedDevices] = useState<DriftedDeviceSummary[]>([]);
 
   const deviceOptions = useMemo(
     () =>
@@ -269,13 +308,20 @@ export default function RemoteSensorSharingSection({
         failed.push(result.deviceUri);
       }
 
+      const detectedDrift = findDriftedDevices(devices, devicesByUri, next);
       setConfigsByDeviceUri(next);
       setUnsupportedDeviceUris(unsupported);
       setFailedDeviceUris(failed);
+      setDriftedDevices(detectedDrift);
       if (Object.keys(next).length === 0 && unsupported.length === 0 && failed.length > 0) {
         throw new Error('Failed to fetch remote sharing config');
       }
-      if (failed.length > 0) {
+      if (detectedDrift.length > 0) {
+        setStatus({
+          tone: 'error',
+          message: `Broadcast slots are out of sync for ${detectedDrift.length} device${detectedDrift.length === 1 ? '' : 's'}. Use Re-sync All Broadcasts to repair them.`,
+        });
+      } else if (failed.length > 0) {
         setStatus({
           tone: 'success',
           message: `Remote sharing loaded for ${Object.keys(next).length} device${Object.keys(next).length === 1 ? '' : 's'}. ${failed.length} device${failed.length === 1 ? '' : 's'} failed to load.`,
@@ -292,10 +338,11 @@ export default function RemoteSensorSharingSection({
       setConfigsByDeviceUri({});
       setUnsupportedDeviceUris([]);
       setFailedDeviceUris([]);
+      setDriftedDevices([]);
       setDraftRemotePirs(null);
       setStatus({ tone: 'error', message: toErrorMessage(error) });
     }
-  }, [deviceOptions]);
+  }, [deviceOptions, devices, devicesByUri]);
 
   useEffect(() => {
     if (deviceOptions.length === 0) {
@@ -447,6 +494,39 @@ export default function RemoteSensorSharingSection({
     }
   };
 
+  const resyncAllBroadcasts = async () => {
+    if (Object.keys(configsByDeviceUri).length === 0) {
+      return;
+    }
+
+    setSavingKey('resync');
+    setStatus({ tone: 'working', message: 'Re-syncing derived broadcasts across resolved devices...' });
+    try {
+      const syncedConfigsByDeviceUri = await syncDerivedDestinations(configsByDeviceUri);
+      const detectedDrift = findDriftedDevices(devices, devicesByUri, syncedConfigsByDeviceUri);
+      setConfigsByDeviceUri(syncedConfigsByDeviceUri);
+      setDriftedDevices(detectedDrift);
+      if (activeDeviceUri) {
+        const syncedActiveConfig = syncedConfigsByDeviceUri[activeDeviceUri];
+        if (syncedActiveConfig) {
+          setDraftRemotePirs(cloneRemotePirList(syncedActiveConfig.remotePirs));
+        }
+      }
+      setStatus({
+        tone: detectedDrift.length === 0 ? 'success' : 'error',
+        message:
+          detectedDrift.length === 0
+            ? 'Derived broadcasts were re-synced across resolved devices.'
+            : `Broadcast drift remains on ${detectedDrift.length} device${detectedDrift.length === 1 ? '' : 's'}.`,
+      });
+    } catch (error) {
+      await loadAllRemoteSharingConfigs();
+      setStatus({ tone: 'error', message: toErrorMessage(error) });
+    } finally {
+      setSavingKey(null);
+    }
+  };
+
   const derivedOutgoingDestinations = useMemo(() => {
     if (!activeDevice || !activeConfig) {
       return [];
@@ -497,6 +577,16 @@ export default function RemoteSensorSharingSection({
           </button>
           <button
             type="button"
+            disabled={savingKey !== null || hasDirtyRemotePirs || driftedDevices.length === 0}
+            onClick={() => {
+              void resyncAllBroadcasts();
+            }}
+            className="rounded border border-amber-300 bg-amber-50 px-2 py-1.5 text-xs font-medium text-amber-800 hover:bg-amber-100 disabled:cursor-not-allowed disabled:border-gray-200 disabled:bg-gray-50 disabled:text-gray-400"
+          >
+            Re-sync All Broadcasts
+          </button>
+          <button
+            type="button"
             disabled={savingKey === 'persist' || hasDirtyRemotePirs || deviceOptions.length === 0}
             onClick={() => {
               void persistAllDevices();
@@ -513,6 +603,12 @@ export default function RemoteSensorSharingSection({
         {status.message}
         {hasDirtyRemotePirs ? ' Save the active remote input row before persisting.' : ''}
       </div>
+      {driftedDevices.length > 0 ? (
+        <div className="mb-4 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          Broadcast drift detected on {driftedDevices.map((device) => device.displayName).join(', ')}.
+          {hasDirtyRemotePirs ? ' Save the active remote input row first, then re-sync broadcasts.' : ''}
+        </div>
+      ) : null}
 
       {!activeConfig || !draftRemotePirs ? (
         <div className="rounded border border-slate-200 bg-slate-50 px-3 py-4 text-sm text-slate-600">
