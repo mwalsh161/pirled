@@ -1,0 +1,15 @@
+.git
+.gitignore
+.platformio
+.platformio-core
+.vscode
+.idea
+api/.venv
+api/data
+frontend/node_modules
+frontend/dist
+**/__pycache__
+**/.pytest_cache
+**/.mypy_cache
+**/.DS_Store
+*.pyc

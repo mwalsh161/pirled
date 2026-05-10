@@ -42,3 +42,40 @@ ln -s ~/.platformio/platforms .platformio-core/platforms
 ```
 
 This is optional. If the symlinks are absent, PlatformIO can manage `.platformio-core/` directly.
+
+## Docker deployment
+
+The API server can be built as a single production image that also contains the built frontend bundle. Build from the repo root so the Docker build can access both `api/` and `frontend/`:
+
+```sh
+docker build -f api/Dockerfile -t pirled:latest .
+```
+
+Run it with a bind mount or named volume for persistent app state at `/app/api/data` and publish port `8082`:
+
+```sh
+docker run --rm \
+  -p 8082:8082 \
+  -v "$(pwd)/api-data:/app/api/data" \
+  pirled:latest
+```
+
+Notes:
+- The image builds `frontend/dist` during `docker build`; no prebuilt frontend artifact is required.
+- Persistent data is intentionally excluded from the image and should be mounted at `/app/api/data`.
+- No production environment variables are required by default.
+- The frontend already uses relative asset and API paths, which keeps it compatible with subpath deployments.
+
+For a homelab deploy repo, the expected invocation is:
+
+```sh
+git clone <this-repo>
+cd pirled
+docker build -f api/Dockerfile -t pirled:latest .
+docker run -d \
+  --name pirled \
+  --restart unless-stopped \
+  -p 8082:8082 \
+  -v /path/to/persistent/pirled-data:/app/api/data \
+  pirled:latest
+```
