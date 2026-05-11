@@ -34,5 +34,10 @@ app.include_router(moods_router, prefix="/api", tags=["moods"])
 app.include_router(schedules_router, prefix="/api", tags=["schedules"])
 
 
+@app.get("/api/health", include_in_schema=False)
+def health() -> dict[str, str]:
+    return {"status": "ok"}
+
+
 FRONTEND_DIST = PROJECT_ROOT / "frontend" / "dist"
 app.mount("/", StaticFiles(directory=FRONTEND_DIST, html=True), name="frontend")

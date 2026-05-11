@@ -26,4 +26,7 @@ RUN mkdir -p /app/api/data
 
 EXPOSE 8082
 
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8082/api/health', timeout=2).close()"
+
 CMD ["python", "-m", "server", "8082"]
