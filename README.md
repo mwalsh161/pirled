@@ -51,19 +51,20 @@ The API server can be built as a single production image that also contains the 
 docker build -f api/Dockerfile -t pirled:latest .
 ```
 
-Run it with a bind mount or named volume for persistent app state at `/app/api/data` and publish port `8082`:
+Run it with a bind mount or named volume for persistent app state at `/data` and publish port `8082`:
 
 ```sh
 docker run --rm \
   -p 8082:8082 \
-  -v "$(pwd)/api-data:/app/api/data" \
+  -v "$(pwd)/api-data:/data" \
   pirled:latest
 ```
 
 Notes:
 - The image builds `frontend/dist` during `docker build`; no prebuilt frontend artifact is required.
-- Persistent data is intentionally excluded from the image and should be mounted at `/app/api/data`.
-- No production environment variables are required by default.
+- Persistent data is intentionally excluded from the image and should be mounted at `/data` so host backup/restore jobs can access it.
+- The runtime data path can be overridden with `PIRLED_DATA_DIR`; local non-Docker runs default to `api/data`.
+- Existing deploys that already mount `/app/api/data` can either move that host directory to the `/data` mount or set `PIRLED_DATA_DIR=/app/api/data`.
 - The frontend already uses relative asset and API paths, which keeps it compatible with subpath deployments.
 
 For a homelab deploy repo, the expected invocation is:
@@ -76,6 +77,6 @@ docker run -d \
   --name pirled \
   --restart unless-stopped \
   -p 8082:8082 \
-  -v /path/to/persistent/pirled-data:/app/api/data \
+  -v /path/to/persistent/pirled-data:/data \
   pirled:latest
 ```

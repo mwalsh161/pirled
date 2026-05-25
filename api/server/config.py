@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import os
 import pathlib
 
 THIS_DIR = pathlib.Path(__file__).resolve().parent
 API_DIR = THIS_DIR.parent
 PROJECT_ROOT = API_DIR.parent
-DATA_DIR = API_DIR / "data"
-DATA_DIR.mkdir(exist_ok=True)
+DATA_DIR = pathlib.Path(
+    os.environ.get("PIRLED_DATA_DIR") or API_DIR / "data"
+).expanduser()
+DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 METADATA_FILE = DATA_DIR / "devices_metadata.json"
 MOODS_DIR = DATA_DIR / "moods"

@@ -12,7 +12,8 @@ RUN npm run build
 FROM python:3.11-slim-bookworm AS runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    PIRLED_DATA_DIR=/data
 
 WORKDIR /app/api
 
@@ -22,7 +23,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY api/server ./server
 COPY --from=frontend-builder /build/frontend/dist /app/frontend/dist
 
-RUN mkdir -p /app/api/data
+RUN mkdir -p /data
+VOLUME ["/data"]
 
 EXPOSE 8082
 
