@@ -57,6 +57,10 @@ function isBoolean(value: unknown): value is boolean {
   return typeof value === 'boolean';
 }
 
+function isTimeOfDay(value: unknown): value is string {
+  return isString(value) && /^([01]\d|2[0-3]):([0-5]\d)$/.test(value);
+}
+
 function isKnownDevice(value: unknown): value is KnownDevice {
   if (!isRecord(value) || !isString(value.name)) {
     return false;
@@ -323,7 +327,7 @@ function parseMoodSchedule(payload: unknown): MoodSchedule | null {
   if (!isString(payload.id) || !isString(payload.moodName)) {
     return null;
   }
-  if (!isNumber(payload.intervalSeconds) || !isNumber(payload.nextRunAt) || !isBoolean(payload.enabled)) {
+  if (!isTimeOfDay(payload.timeOfDay) || !isNumber(payload.nextRunAt) || !isBoolean(payload.enabled)) {
     return null;
   }
   if (!isNumber(payload.createdAt) || !isNumber(payload.updatedAt)) {
@@ -348,7 +352,7 @@ function parseMoodSchedule(payload: unknown): MoodSchedule | null {
     id: payload.id,
     moodName: payload.moodName,
     groupId: payload.groupId ?? null,
-    intervalSeconds: payload.intervalSeconds,
+    timeOfDay: payload.timeOfDay,
     nextRunAt: payload.nextRunAt,
     enabled: payload.enabled,
     createdAt: payload.createdAt,
@@ -362,10 +366,15 @@ function parseMoodSchedules(payload: unknown): MoodSchedule[] {
   if (!Array.isArray(payload)) {
     throw new Error('Invalid mood schedules payload');
   }
-  return payload
-    .map((item) => parseMoodSchedule(item))
-    .filter((item): item is MoodSchedule => item !== null)
-    .sort((left, right) => left.nextRunAt - right.nextRunAt);
+  const schedules: MoodSchedule[] = [];
+  for (const item of payload) {
+    const parsed = parseMoodSchedule(item);
+    if (!parsed) {
+      throw new Error('Invalid mood schedules payload');
+    }
+    schedules.push(parsed);
+  }
+  return schedules.sort((left, right) => left.nextRunAt - right.nextRunAt);
 }
 
 function parseMoodApplyStatus(payload: unknown): MoodApplyStatus {
@@ -737,8 +746,7 @@ export async function createMoodSchedule(input: MoodScheduleCreateInput): Promis
     body: JSON.stringify({
       moodName: input.moodName,
       groupId: input.groupId,
-      intervalSeconds: input.intervalSeconds,
-      firstRunAt: input.firstRunAt,
+      timeOfDay: input.timeOfDay,
       enabled: input.enabled,
     }),
   });

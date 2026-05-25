@@ -22,8 +22,7 @@ interface SaveMoodInput {
 interface ScheduleDraft {
   moodName: string;
   groupId: string;
-  intervalSeconds: string;
-  nextRunLocal: string;
+  timeOfDay: string;
   enabled: boolean;
 }
 
@@ -59,29 +58,6 @@ function timestampToText(timestamp?: number): string {
   return new Date(timestamp * 1000).toLocaleString();
 }
 
-function pad2(value: number): string {
-  return value.toString().padStart(2, '0');
-}
-
-function timestampToLocalInputValue(timestamp: number): string {
-  const date = new Date(timestamp * 1000);
-  const year = date.getFullYear();
-  const month = pad2(date.getMonth() + 1);
-  const day = pad2(date.getDate());
-  const hours = pad2(date.getHours());
-  const minutes = pad2(date.getMinutes());
-  const seconds = pad2(date.getSeconds());
-  return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}`;
-}
-
-function localInputValueToTimestamp(value: string): number | null {
-  const parsedMs = Date.parse(value);
-  if (!Number.isFinite(parsedMs)) {
-    return null;
-  }
-  return Math.floor(parsedMs / 1000);
-}
-
 function formatScope(groups: LogicalGroup[], groupId: string | null): string {
   if (!groupId) {
     return 'All labeled endpoints';
@@ -90,14 +66,8 @@ function formatScope(groups: LogicalGroup[], groupId: string | null): string {
   return group ? `Group: ${group.name}` : `Missing group (${groupId})`;
 }
 
-function formatInterval(seconds: number): string {
-  if (seconds % 3600 === 0) {
-    return `${seconds / 3600}h`;
-  }
-  if (seconds % 60 === 0) {
-    return `${seconds / 60}m`;
-  }
-  return `${seconds}s`;
+function isTimeOfDay(value: string): boolean {
+  return /^([01]\d|2[0-3]):([0-5]\d)$/.test(value);
 }
 
 function summarizeApplyReport(report: ApplyReport): string {
@@ -111,8 +81,7 @@ function toScheduleDraft(schedule: MoodSchedule): ScheduleDraft {
   return {
     moodName: schedule.moodName,
     groupId: schedule.groupId ?? '',
-    intervalSeconds: schedule.intervalSeconds.toString(),
-    nextRunLocal: timestampToLocalInputValue(schedule.nextRunAt),
+    timeOfDay: schedule.timeOfDay,
     enabled: schedule.enabled,
   };
 }
@@ -148,8 +117,7 @@ export default function MoodStudioSection({
   const [cloneTargetByMood, setCloneTargetByMood] = useState<Record<string, string>>({});
   const [scheduleMoodNameInput, setScheduleMoodNameInput] = useState('');
   const [scheduleGroupIdInput, setScheduleGroupIdInput] = useState('');
-  const [scheduleIntervalInput, setScheduleIntervalInput] = useState('300');
-  const [scheduleFirstRunInput, setScheduleFirstRunInput] = useState('');
+  const [scheduleTimeOfDayInput, setScheduleTimeOfDayInput] = useState('19:00');
   const [scheduleEnabledInput, setScheduleEnabledInput] = useState(true);
   const [scheduleDraftsById, setScheduleDraftsById] = useState<Record<string, ScheduleDraft>>({});
   const [activePanel, setActivePanel] = useState<MoodStudioPanel>('library');
@@ -300,9 +268,8 @@ export default function MoodStudioSection({
   };
 
   const handleCreateSchedule = () => {
-    const intervalSeconds = Number.parseInt(scheduleIntervalInput, 10);
-    if (!Number.isInteger(intervalSeconds) || intervalSeconds < 60) {
-      setStatusMessage('Interval must be an integer >= 60 seconds.');
+    if (!isTimeOfDay(scheduleTimeOfDayInput)) {
+      setStatusMessage('Schedule time must use HH:MM 24-hour format.');
       return;
     }
     if (!scheduleMoodNameInput) {
@@ -310,25 +277,14 @@ export default function MoodStudioSection({
       return;
     }
 
-    let firstRunAt: number | null = null;
-    if (scheduleFirstRunInput.trim().length > 0) {
-      firstRunAt = localInputValueToTimestamp(scheduleFirstRunInput);
-      if (firstRunAt === null) {
-        setStatusMessage('First run time is invalid.');
-        return;
-      }
-    }
-
     void (async () => {
       try {
         await onCreateMoodSchedule({
           moodName: scheduleMoodNameInput,
           groupId: scheduleGroupIdInput || null,
-          intervalSeconds,
-          firstRunAt,
+          timeOfDay: scheduleTimeOfDayInput,
           enabled: scheduleEnabledInput,
         });
-        setScheduleFirstRunInput('');
         setStatusMessage(`Created schedule for "${scheduleMoodNameInput}".`);
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Unknown schedule create error';
@@ -362,14 +318,8 @@ export default function MoodStudioSection({
 
   const handleSaveSchedule = (schedule: MoodSchedule) => {
     const draft = scheduleDraftsById[schedule.id] ?? toScheduleDraft(schedule);
-    const intervalSeconds = Number.parseInt(draft.intervalSeconds, 10);
-    if (!Number.isInteger(intervalSeconds) || intervalSeconds < 60) {
-      setStatusMessage(`Schedule "${schedule.id}" interval must be >= 60 seconds.`);
-      return;
-    }
-    const nextRunAt = localInputValueToTimestamp(draft.nextRunLocal);
-    if (nextRunAt === null) {
-      setStatusMessage(`Schedule "${schedule.id}" next run time is invalid.`);
+    if (!isTimeOfDay(draft.timeOfDay)) {
+      setStatusMessage(`Schedule "${schedule.id}" time must use HH:MM 24-hour format.`);
       return;
     }
 
@@ -381,11 +331,8 @@ export default function MoodStudioSection({
     if (normalizedGroupId !== schedule.groupId) {
       patch.groupId = normalizedGroupId;
     }
-    if (intervalSeconds !== schedule.intervalSeconds) {
-      patch.intervalSeconds = intervalSeconds;
-    }
-    if (nextRunAt !== schedule.nextRunAt) {
-      patch.nextRunAt = nextRunAt;
+    if (draft.timeOfDay !== schedule.timeOfDay) {
+      patch.timeOfDay = draft.timeOfDay;
     }
     if (draft.enabled !== schedule.enabled) {
       patch.enabled = draft.enabled;
@@ -700,7 +647,7 @@ export default function MoodStudioSection({
             </button>
           </div>
           <p className="mt-1 text-xs text-indigo-800">
-            Auto-apply saved moods on an interval. Schedules run on the server and persist across reloads.
+            Auto-apply saved moods daily at a server-local time. Schedules run on the server and persist across reloads.
           </p>
 
           <div className="mt-3 rounded border border-indigo-200 bg-white p-3">
@@ -722,7 +669,7 @@ export default function MoodStudioSection({
             )}
           </div>
 
-          <div className="mt-3 grid gap-2 rounded border border-indigo-200 bg-white p-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_120px_220px_auto_auto]">
+          <div className="mt-3 grid gap-2 rounded border border-indigo-200 bg-white p-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_140px_auto_auto]">
             <label className="text-xs font-medium text-gray-700">
               Mood
               <select
@@ -758,26 +705,12 @@ export default function MoodStudioSection({
               </select>
             </label>
             <label className="text-xs font-medium text-gray-700">
-              Interval (sec)
+              Time
               <input
-                type="number"
-                min={60}
-                step={1}
-                value={scheduleIntervalInput}
+                type="time"
+                value={scheduleTimeOfDayInput}
                 onChange={(event) => {
-                  setScheduleIntervalInput(event.target.value);
-                }}
-                className="mt-1 w-full rounded border border-gray-300 px-2 py-1 text-sm text-gray-900"
-              />
-            </label>
-            <label className="text-xs font-medium text-gray-700">
-              First Run (optional)
-              <input
-                type="datetime-local"
-                step={1}
-                value={scheduleFirstRunInput}
-                onChange={(event) => {
-                  setScheduleFirstRunInput(event.target.value);
+                  setScheduleTimeOfDayInput(event.target.value);
                 }}
                 className="mt-1 w-full rounded border border-gray-300 px-2 py-1 text-sm text-gray-900"
               />
@@ -817,7 +750,7 @@ export default function MoodStudioSection({
                       <div className="text-xs text-gray-700">
                         <p className="font-semibold text-gray-900">{schedule.id}</p>
                         <p>
-                          Next: {timestampToText(schedule.nextRunAt)} ({formatInterval(schedule.intervalSeconds)})
+                          Daily at {schedule.timeOfDay}; next: {timestampToText(schedule.nextRunAt)}
                         </p>
                         <p>Last run: {schedule.lastRunAt ? timestampToText(schedule.lastRunAt) : 'Never'}</p>
                         <p>
@@ -854,7 +787,7 @@ export default function MoodStudioSection({
                         </button>
                       </div>
                     </div>
-                    <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_120px_220px_auto]">
+                    <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_140px_auto]">
                       <label className="text-xs font-medium text-gray-700">
                         Mood
                         <select
@@ -893,26 +826,12 @@ export default function MoodStudioSection({
                         </select>
                       </label>
                       <label className="text-xs font-medium text-gray-700">
-                        Interval (sec)
+                        Time
                         <input
-                          type="number"
-                          min={60}
-                          step={1}
-                          value={draft.intervalSeconds}
+                          type="time"
+                          value={draft.timeOfDay}
                           onChange={(event) => {
-                            updateScheduleDraft(schedule.id, { intervalSeconds: event.target.value });
-                          }}
-                          className="mt-1 w-full rounded border border-gray-300 px-2 py-1 text-sm text-gray-900"
-                        />
-                      </label>
-                      <label className="text-xs font-medium text-gray-700">
-                        Next Run
-                        <input
-                          type="datetime-local"
-                          step={1}
-                          value={draft.nextRunLocal}
-                          onChange={(event) => {
-                            updateScheduleDraft(schedule.id, { nextRunLocal: event.target.value });
+                            updateScheduleDraft(schedule.id, { timeOfDay: event.target.value });
                           }}
                           className="mt-1 w-full rounded border border-gray-300 px-2 py-1 text-sm text-gray-900"
                         />

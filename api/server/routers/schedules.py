@@ -41,8 +41,7 @@ def create_mood_schedule(payload: MoodScheduleCreateRequest) -> MoodSchedule:
         return MOOD_SCHEDULER.add_schedule(
             mood_name=cleaned_mood_name,
             group_id=group_id,
-            interval_seconds=payload.intervalSeconds,
-            first_run_at=payload.firstRunAt,
+            time_of_day=payload.timeOfDay,
             enabled=payload.enabled,
         )
     except ValueError as exc:
@@ -74,8 +73,7 @@ def update_mood_schedule(
             mood_name=mood_name,
             group_id=group_id,
             group_id_set=group_id_set,
-            interval_seconds=payload.intervalSeconds,
-            next_run_at=payload.nextRunAt,
+            time_of_day=payload.timeOfDay,
             enabled=payload.enabled,
         )
     except ValueError as exc:

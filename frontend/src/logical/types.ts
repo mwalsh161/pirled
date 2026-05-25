@@ -52,7 +52,7 @@ export interface MoodSchedule {
   id: string;
   moodName: string;
   groupId: string | null;
-  intervalSeconds: number;
+  timeOfDay: string;
   nextRunAt: number;
   enabled: boolean;
   createdAt: number;
@@ -64,16 +64,14 @@ export interface MoodSchedule {
 export interface MoodScheduleCreateInput {
   moodName: string;
   groupId: string | null;
-  intervalSeconds: number;
-  firstRunAt: number | null;
+  timeOfDay: string;
   enabled: boolean;
 }
 
 export interface MoodScheduleUpdateInput {
   moodName?: string;
   groupId?: string | null;
-  intervalSeconds?: number;
-  nextRunAt?: number;
+  timeOfDay?: string;
   enabled?: boolean;
 }
 

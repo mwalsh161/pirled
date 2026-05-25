@@ -5,7 +5,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, StrictInt, field_validator
 
 from .config import LED_COUNT, PIR_COUNT
-from .scheduler import ApplyReport, MIN_INTERVAL_SECONDS, MoodSchedule
+from .scheduler import ApplyReport, MoodSchedule, _validate_time_of_day_value
 from .validation import (
     clean_device_alias,
     clean_led_label,
@@ -38,19 +38,33 @@ class MoodApplyStatusResponse(FrozenModel):
 
 
 class MoodScheduleCreateRequest(FrozenModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
     moodName: str
     groupId: str | None = None
-    intervalSeconds: int = Field(ge=MIN_INTERVAL_SECONDS)
-    firstRunAt: int | None = None
+    timeOfDay: str
     enabled: bool = True
+
+    @field_validator("timeOfDay")
+    @classmethod
+    def _validate_time_of_day(cls, value: str) -> str:
+        return _validate_time_of_day_value(value)
 
 
 class MoodScheduleUpdateRequest(FrozenModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
     moodName: str | None = None
     groupId: str | None = None
-    intervalSeconds: int | None = Field(default=None, ge=MIN_INTERVAL_SECONDS)
-    nextRunAt: int | None = None
+    timeOfDay: str | None = None
     enabled: bool | None = None
+
+    @field_validator("timeOfDay")
+    @classmethod
+    def _validate_time_of_day(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return _validate_time_of_day_value(value)
 
 
 class DeleteScheduleResponse(FrozenModel):
