@@ -6,7 +6,7 @@ import time
 
 from zeroconf import ServiceBrowser, ServiceListener, Zeroconf
 
-from ..config import DEVICE_NAME_PREFIX, MDNS_SERVICE_TYPE
+from ..config import DEVICE_HTTP_PORT, DEVICE_NAME_PREFIX, MDNS_SERVICE_TYPE
 from ..schemas import (
     DeviceCacheResponse,
     KnownDeviceResponse,
@@ -76,28 +76,48 @@ def sync_device_name_index_from_discovery() -> list[str]:
     return sorted(discovered_names)
 
 
+def _lookup_ipv4(hostname: str) -> tuple[str | None, str | None]:
+    try:
+        results = socket.getaddrinfo(hostname, None, socket.AF_INET, socket.SOCK_STREAM)
+        for result in results:
+            sockaddr = result[4]
+            if sockaddr:
+                return str(sockaddr[0]), None
+        return None, "no IPv4 results"
+    except socket.gaierror as exc:
+        return None, str(exc)
+
+
 def _pick_host_address(
-    type_: str, service_name: str
+    service: tuple[str, str] | None, device_name: str
 ) -> tuple[str | None, int | None, str | None]:
-    if zc is None:
-        return None, None, "mDNS is not initialized"
-    info = zc.get_service_info(type_, service_name)
-    if info is None:
-        return None, None, "No mDNS service info"
-    if not info.port:
-        return None, None, "mDNS service missing port"
+    port = DEVICE_HTTP_PORT
+    hostnames = [f"{device_name}.local"]
 
-    addresses = info.parsed_addresses()
-    for address in addresses:
-        if ":" not in address:
-            return address, int(info.port), None
+    if service is not None and zc is not None:
+        type_, service_name = service
+        info = zc.get_service_info(type_, service_name)
+        if info is not None:
+            if info.port:
+                port = int(info.port)
 
-    if info.server:
-        try:
-            return socket.gethostbyname(info.server), int(info.port), None
-        except socket.gaierror:
-            pass
+            addresses = info.parsed_addresses()
+            for address in addresses:
+                if ":" not in address:
+                    return address, port, None
 
+            if info.server:
+                hostnames.insert(0, info.server.rstrip("."))
+
+    lookup_errors = []
+    for hostname in dict.fromkeys(hostnames):
+        host, error = _lookup_ipv4(hostname)
+        if host is not None:
+            return host, port, None
+        lookup_errors.append(f"{hostname}: {error}")
+
+    if lookup_errors:
+        return None, None, f"No IPv4 address found ({'; '.join(lookup_errors)})"
     return None, None, "No IPv4 address found"
 
 
@@ -107,13 +127,7 @@ def _resolve_device_name(
     with DISCOVERY_STATE_LOCK:
         service = SERVICE_BY_DEVICE_NAME.get(device_name)
 
-    if service is None:
-        with DISCOVERY_STATE_LOCK:
-            RESOLVED_DEVICE_BY_NAME.pop(device_name, None)
-        return None, "No discovered mDNS service"
-
-    type_, service_name = service
-    host, port, error = _pick_host_address(type_, service_name)
+    host, port, error = _pick_host_address(service, device_name)
     if error is not None or host is None or port is None:
         with DISCOVERY_STATE_LOCK:
             RESOLVED_DEVICE_BY_NAME.pop(device_name, None)
